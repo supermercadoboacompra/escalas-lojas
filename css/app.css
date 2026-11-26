@@ -302,6 +302,13 @@ details.abre > div { padding-bottom: 14px; }
 .cel.afa { background: var(--afa); color: var(--afa-txt); font-weight: 700; font-size: 9.5px; }
 .cel.vac { background: var(--vac); color: var(--vac-txt); font-weight: 700; font-size: 9.5px; }
 .escolha { grid-template-columns: repeat(4, 1fr); } .escolha button { padding: 12px 4px; font-size: .92rem; }
+/* vaga (ainda vai contratar) */
+#nTipo { grid-template-columns: 1fr 1fr; margin-bottom: 4px; }
+.selo-vaga { display: inline-block; font-size: .62rem; font-weight: 800; letter-spacing: .04em; padding: 1px 6px; margin-right: 6px; border-radius: 99px; border: 1.5px dashed var(--laranja); color: var(--laranja); vertical-align: 1px; }
+.linha-vaga td.nome { box-shadow: inset 3px 0 0 var(--laranja); background-image: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--laranja) 7%, transparent) 6px 12px); }
+.linha-vaga .cel { outline: 1.5px dashed color-mix(in srgb, var(--laranja) 55%, transparent); outline-offset: -2px; }
+.cel.nao { background: transparent; color: var(--texto-fraco, #8a94a3); }
+.cel.nao::after { content: "–"; }
 @media (max-width: 420px) { .escolha { grid-template-columns: 1fr 1fr; } }
 details.eq-setor { padding: 0; }
 details.eq-setor > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 16px 18px; flex-wrap: wrap; }

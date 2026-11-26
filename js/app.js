@@ -239,7 +239,11 @@ function abrirAlertas() {
       txt = `${a.tipo === "ferias" ? "Férias" : "Afastado (" + (a.situacao || "afastamento") + ")"} ${per}.`;
       bts = a.inicio ? [["marcar", a.tipo === "ferias" ? "Marcar férias nesses dias" : "Marcar afastamento nesses dias"]] : [["tirar", "Tirar da escala do mês"]];
     }
-    if (a.tipo === "novo") { txt = `Entrou na Senior${a.data ? " (admissão " + dataBr(a.data) + ")" : ""}${a.cargo ? ", " + tituloBonito(a.cargo) : ""}, e não está na escala.`; bts = [["incluir", "Incluir na escala"]]; }
+    if (a.tipo === "novo") { txt = `Entrou na Senior${a.data ? " (admissão " + dataBr(a.data) + ")" : ""}${a.cargo ? ", " + tituloBonito(a.cargo) : ""}, e não está na escala.`; bts = [["incluir", "Incluir na escala"]];
+      // vagas abertas: as do mesmo setor primeiro
+      const ns = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+      const vs = vagas().sort((x, y) => (ns(a.setor).includes(ns(y.setor)) ? 1 : 0) - (ns(a.setor).includes(ns(x.setor)) ? 1 : 0));
+      if (vs.length) { txt += ` Pode ocupar uma vaga: fica com os horários e as folgas dela.`; bts = vs.map((v) => ["ocupar:" + v.id, `Ocupar a ${v.nome}`]).concat(bts); } }
     return `<div class="problema aviso"><span class="bola"></span><div class="txt"><b>${esc(nome)}</b><small>${esc(p ? p.setor : tituloBonito(a.setor || ""))} · ${esc(txt)}</small>
       ${travar ? `<small style="display:block;margin-top:4px">Escala lançada: reabra para ajustar.</small>` : `<div class="linha" style="margin-top:8px">${bts.map(([acao, rot]) => `<button class="btn primario" data-k="${k}" data-acao="${acao}">${esc(rot)}</button>`).join("")}${p ? `<button class="btn" data-k="${k}" data-acao="ver">Ver a pessoa</button>` : ""}<button class="btn" data-k="${k}" data-acao="ok">${a.tipo === "novo" ? "Não entra na escala" : "Deixar como está"}</button></div>`}</div></div>`;
   };
@@ -258,6 +262,17 @@ function abrirAlertas() {
     if (acao === "ver") { abrirPessoa(p.id); return; }
     if (acao === "ok") { alterar(visto); abrirAlertas(); return; }
     if (acao === "incluir") { fecharPainel(); incluirPessoa({ nome: tituloBonito(a.nome), setor: a.setor, chave: a.chave }); return; }
+    if (acao.startsWith("ocupar:")) {
+      const v = pessoa(acao.slice(7)); if (!v) return;
+      const nomeVaga = v.nome, nome = tituloBonito(a.nome), adm = a.data ? String(a.data).slice(0, 10) : null;
+      alterar(() => {
+        v.chave = +a.chave; v.nome = nome; v.nomeCompleto = nome; v.cargo = tituloBonito(a.cargo || ""); delete v.vaga;
+        // entrou depois do dia de início da vaga: os dias antes da admissão ficam "ainda não entrou"
+        aplicarInicio(v, adm && adm > (v.inicio || "") ? adm : v.inicio);
+      });
+      toast(`${nome} ocupou a ${nomeVaga}. ${impactoTxt(antesCob, antesBur)}`);
+      abrirAlertas(); return;
+    }
     if (acao === "tirar") {
       const desde = a.tipo === "saiu" && a.data && String(a.data).slice(0, 10) > iniMes ? String(a.data).slice(0, 10) : null;
       alterar(() => { if (desde) E.dias.forEach((x, i) => { if (x.iso >= desde && !x.fechado) p.dias[i] = { t: "A" }; }); else p.fora = { motivo: a.tipo === "saiu" ? "Saiu da empresa (Senior)" : "Afastado (Senior)" }; visto(); });
@@ -320,14 +335,15 @@ function sanear(A, B) {
     horas: [42, 36, 30, 24, 20].includes(+p.horas) ? +p.horas : 42, turno: p.turno === "M" || p.turno === "T" ? p.turno : null,
     saidaMax: horaCombinada(p.saidaMax), entradaMin: horaCombinada(p.entradaMin),
     entradaAtual: n(p.entradaAtual), semDomingo: !!p.semDomingo, semFeriado: !!p.semFeriado, novo: !!p.novo, subGerente: !!p.subGerente,
+    vaga: !!p.vaga, inicio: /^\d{4}-\d{2}-\d{2}$/.test(String(p.inicio || "")) ? String(p.inicio) : null,
     fora: p.fora ? { motivo: t(p.fora.motivo, 60) } : undefined,
     dias: B.dias.map((x, i) => {
       const c = (p.dias || [])[i] || {};
       if (c.t === "T" && n(c.ini) != null && n(c.fim) != null) { const a = Array.isArray(c.alm) && n(c.alm[0]) != null && n(c.alm[1]) != null ? [n(c.alm[0]), n(c.alm[1])] : null; return { t: "T", ini: n(c.ini), fim: n(c.fim), alm: a }; }
-      return { t: ["F", "D", "X", "A", "V"].includes(c.t) ? c.t : "F" };
+      return { t: ["F", "D", "X", "A", "V", "N"].includes(c.t) ? c.t : "F" };
     }),
   }));
-  out.pessoas.forEach((p) => { if (!p.fora) delete p.fora; if (p.chave == null) delete p.chave; });
+  out.pessoas.forEach((p) => { if (!p.fora) delete p.fora; if (p.chave == null) delete p.chave; if (!p.vaga) delete p.vaga; if (!p.inicio) delete p.inicio; });
   // avisos do quadro que o gerente já resolveu (só textos curtos)
   out.alertasVistos = (Array.isArray(A && A.alertasVistos) ? A.alertasVistos : []).filter((k) => typeof k === "string" && k.length < 80).slice(0, 300);
   return out;
@@ -556,6 +572,7 @@ async function confirmarLancar() {
   }
   modal(`<h2>Lançar "${esc(nomeAberta())}"?</h2>
     <p>${esc(ESC.loja_nome)} · ${esc(mesTxt(ESC.mes))} · ${E.pessoas.filter((p) => !p.fora).length} pessoas · ${MUD.length} ${MUD.length === 1 ? "mudança" : "mudanças"} em relação à escala padrão${VAL.avisos.length ? ` · ${VAL.avisos.length} avisos` : ""}.</p>
+    ${vagas().length ? `<div class="faixa aviso"><span class="selo-vaga">VAGA</span><div>Esta escala tem ${vagas().length === 1 ? "1 vaga" : vagas().length + " vagas"} a contratar (${vagas().map((v) => esc(v.nome)).join(", ")}). Até a contratação, esses horários ficam descobertos.</div></div>` : ""}
     <p class="dica">Esta passa a ser a escala da loja no mês. Depois de lançada ela fica travada; se precisar mudar, dá para reabrir.</p>`,
   [{ rotulo: "Cancelar" }, { rotulo: "Lançar", tipo: "laranja", fn: async () => {
     const { error } = await SB.rpc("escala_lancar", { p_id: ESC.id, p_versao: ABERTA ? ABERTA.id : null });
@@ -578,6 +595,7 @@ function classeCel(x, c) {
   if (c.t === "X") return "x";
   if (c.t === "A") return "afa";
   if (c.t === "V") return "vac";
+  if (c.t === "N") return "nao";
   if (x.fechado) return "fech";
   return c.t === "D" ? "d" : "f";
 }
@@ -586,8 +604,45 @@ function textoCel(x, c) {
   if (c.t === "X") return "FER";
   if (c.t === "A") return "AFAST";
   if (c.t === "V") return "FÉRIAS";
+  if (c.t === "N") return "";
   if (x.fechado) return "";
   return c.t === "D" ? "DOM" : "F";
+}
+/* vagas: pessoa que ainda vai ser contratada ("colaborador fantasma") */
+const vagas = () => E.pessoas.filter((p) => p.vaga && !p.fora);
+const isoBr = (iso) => iso ? iso.slice(8, 10) + "/" + iso.slice(5, 7) : "";
+/* colega que serve de modelo de folgas: mesmo setor e mesmas horas */
+const colegaModelo = (setor, horas, semId) => { const ok = (q) => !q.fora && !q.vaga && q.id !== semId; return E.pessoas.find((q) => ok(q) && q.setor === setor && q.horas === horas) || E.pessoas.find((q) => ok(q) && q.horas === horas) || E.pessoas.find(ok); };
+function aplicarInicio(p, iso) {
+  // antes do dia de início fica "ainda não entrou"; dias que voltam a valer seguem as folgas de um colega do setor
+  p.inicio = iso && iso > E.dias[0].iso ? iso : null;
+  const base = colegaModelo(p.setor, p.horas, p.id);
+  // folga fixa que a pessoa já tem (dia útil que mais aparece como folga) para manter nos dias que voltam
+  const cnt = {}; p.dias.forEach((c, i) => { const w = E.dias[i].w; if (c.t === "F" && w >= 1 && w <= 5) cnt[w] = (cnt[w] || 0) + 1; });
+  const fixa = +(Object.entries(cnt).sort((a, b) => b[1] - a[1])[0] || [0])[0];
+  const voltou = p.dias.some((c, i) => c.t === "N" && !(p.inicio && E.dias[i].iso < p.inicio));
+  E.dias.forEach((x, i) => {
+    if (p.inicio && x.iso < p.inicio) { p.dias[i] = x.fechado && p.dias[i].t === "X" ? p.dias[i] : { t: "N" }; return; }
+    if (p.dias[i].t !== "N") return;
+    const c = base ? base.dias[i] : { t: x.w === 0 ? "D" : "T" };
+    p.dias[i] = c.t === "T" ? horarioSugerido(p, i) : c.t === "A" || c.t === "V" || c.t === "N" ? { t: x.w === 0 ? "D" : "F" } : clone(c);
+  });
+  if (voltou && fixa) moverFolgaFixa(p, fixa);
+  if (!voltou) return;
+  // garante 2 folgas por semana (5x2) nas semanas que voltaram: folga no dia fixo primeiro, depois no dia útil que quebra a maior sequência
+  (E.semanas || []).forEach((S) => {
+    let falta = 2 - S.dias.filter((i) => ehFolga(p.dias[i]) || AUSENCIA.includes(p.dias[i].t)).length;
+    while (falta > 0) {
+      const livres = S.dias.filter((i) => p.dias[i].t === "T" && E.dias[i].w >= 1 && E.dias[i].w <= 5);
+      if (!livres.length) break;
+      const k = livres.find((i) => E.dias[i].w === fixa && !S.dias.some((q) => q !== i && p.dias[q].t === "F" && E.dias[q].w === fixa)) ?? livres[Math.floor(livres.length / 2)];
+      p.dias[k] = { t: "F" }; falta--;
+    }
+  });
+}
+function proximoNomeVaga(setor) {
+  let k = 1; while (E.pessoas.some((p) => p.nome === `Vaga ${setor} ${k}`)) k++;
+  return `Vaga ${setor} ${k}`;
 }
 function telaEscala(c) {
   const setores = setoresDe(E), lancada = travada();
@@ -603,7 +658,7 @@ function telaEscala(c) {
     const ps = visiveis.filter((p) => p.setor === s); if (!ps.length) return;
     linhas += `<tr class="setor"><td colspan="${E.dias.length + 1}">${esc(s)} · ${ps.length}</td></tr>`;
     ps.forEach((p) => {
-      linhas += `<tr class="${p.fora ? "pessoa-fora" : ""}"><td class="nome" data-p="${esc(p.id)}"><b>${esc(p.nome)}${errosDia[p.id] ? '<span class="marca-erro"></span>' : ""}</b><small>${p.horas}h${p.turno ? " · turno " + (p.turno === "M" ? "manhã" : "tarde") : ""}${p.novo ? " · incluída" : ""}${p.fora ? " · fora da escala" : ""}</small></td>`;
+      linhas += `<tr class="${p.fora ? "pessoa-fora" : ""}${p.vaga ? " linha-vaga" : ""}"><td class="nome" data-p="${esc(p.id)}"><b>${p.vaga ? '<span class="selo-vaga">VAGA</span>' : ""}${esc(p.nome)}${errosDia[p.id] ? '<span class="marca-erro"></span>' : ""}</b><small>${p.horas}h${p.turno ? " · turno " + (p.turno === "M" ? "manhã" : "tarde") : ""}${p.vaga ? (p.inicio ? " · começa " + isoBr(p.inicio) : " · a contratar") : p.novo ? " · incluída" : ""}${p.fora ? " · fora da escala" : ""}</small></td>`;
       E.dias.forEach((x, i) => {
         const cc = p.dias[i], k = p.id + ":" + i;
         linhas += `<td class="${iniSemana(i) ? "semana-ini" : ""}"><div class="cel ${classeCel(x, cc)}${mudou[k] ? " mudou" : ""}${errosDia[k] ? " tem-erro" : avisosDia[k] ? " tem-aviso" : ""}" data-p="${esc(p.id)}" data-i="${i}" title="${esc(p.nome)} · ${DIAS_SEM[x.w]} ${dataTxt(x)}">${textoCel(x, cc)}</div></td>`;
@@ -624,7 +679,7 @@ function telaEscala(c) {
     <button class="btn" id="imprimir">${ic("imprimir")} Imprimir</button>
     <button class="btn" id="excel">${ic("baixar")} Excel</button>
   </div>
-  <div class="legenda"><span><i style="background:var(--manha)"></i>manhã (entrada e saída)</span><span><i style="background:var(--tarde)"></i>tarde</span><span><i style="background:var(--folga)"></i>F = folga</span><span><i style="background:var(--dom)"></i>DOM = folga no domingo</span><span><i style="background:var(--afa)"></i>AFAST = afastado</span><span><i style="background:var(--vac)"></i>FÉRIAS</span><span><i style="background:var(--fechado)"></i>loja fechada</span><span><i style="background:var(--laranja);width:8px;height:8px;border-radius:50%"></i>mudou do padrão</span><span><i style="box-shadow:inset 0 0 0 2px var(--erro)"></i>arrumar</span><span><i style="box-shadow:inset 0 0 0 2px var(--amarelo)"></i>aviso</span></div>
+  <div class="legenda"><span><i style="background:var(--manha)"></i>manhã (entrada e saída)</span><span><i style="background:var(--tarde)"></i>tarde</span><span><i style="background:var(--folga)"></i>F = folga</span><span><i style="background:var(--dom)"></i>DOM = folga no domingo</span><span><i style="background:var(--afa)"></i>AFAST = afastado</span><span><i style="background:var(--vac)"></i>FÉRIAS</span><span><i style="background:var(--fechado)"></i>loja fechada</span>${vagas().length ? `<span><i style="border:1.5px dashed var(--laranja);background:transparent"></i>VAGA = ainda vai contratar</span>` : ""}<span><i style="background:var(--laranja);width:8px;height:8px;border-radius:50%"></i>mudou do padrão</span><span><i style="box-shadow:inset 0 0 0 2px var(--erro)"></i>arrumar</span><span><i style="box-shadow:inset 0 0 0 2px var(--amarelo)"></i>aviso</span></div>
   <div class="grade-escala ${lancada ? "travada" : ""}"><table>
     <thead><tr><th class="nome">Pessoa</th>${E.dias.map((x, i) => `<th class="${x.w === 0 ? "dom" : ""} ${iniSemana(i) ? "semana-ini" : ""}">${LETRA[x.w]}<span class="n">${String(x.d).padStart(2, "0")}</span></th>`).join("")}</tr>
     <tr class="conta"><th class="nome" style="top:38px">trabalhando no dia</th>${E.dias.map((x, i) => `<th class="${iniSemana(i) ? "semana-ini" : ""}">${x.fechado ? "" : conta[i]}</th>`).join("")}</tr></thead>
@@ -701,6 +756,7 @@ function abrirCelula(pid, i) {
       ${travar ? `<div class="faixa ok">${ic("cadeado")} ${p.fora ? "Esta pessoa está fora da escala." : "Escala lançada: só dá para ver. Reabra para mudar."}</div>` : ""}
       ${r.t === "X" ? `<p>Feriado com a loja fechada: ninguém trabalha.</p>` : `
       <div class="escolha"><button data-t="T" class="${r.t === "T" ? "sel" : ""}" ${travar ? "disabled" : ""}>Trabalha</button><button data-t="F" class="${r.t === "F" || r.t === "D" ? "sel" : ""}" ${travar ? "disabled" : ""}>Folga</button><button data-t="A" class="${r.t === "A" ? "sel" : ""}" ${travar ? "disabled" : ""}>Afastado</button><button data-t="V" class="${r.t === "V" ? "sel" : ""}" ${travar ? "disabled" : ""}>Férias</button></div>
+      ${r.t === "N" ? `<p class="dica">Vaga: a pessoa ainda não entrou neste dia${p.inicio ? ` (começa em ${isoBr(p.inicio)})` : ""}. Para mudar o dia de início, toque no nome da vaga.</p>` : ""}
       ${r.t === "A" || r.t === "V" ? `<p class="dica">${r.t === "A" ? "Afastado (atestado, INSS, licença ou saiu da empresa)" : "Férias"}: não conta como folga. Se o setor ficar descoberto, veja em "O que arrumar".</p>` : ""}
       ${r.t === "T" ? `
         <div class="horarios">
@@ -771,6 +827,11 @@ function abrirPessoa(pid) {
   const pn = abrirPainel(`
     <div class="painel-topo"><button class="btn-icone" id="fechar" aria-label="Fechar">${ic("fechar")}</button><div><h2>${esc(p.nome)}</h2><p class="dica" style="margin:0">${esc(p.nomeCompleto || "")}${p.cargo ? " · " + esc(p.cargo) : ""}</p></div></div>
     ${p.fora ? `<div class="faixa aviso">Fora da escala${p.fora.motivo ? ": " + esc(p.fora.motivo) : ""}.</div>` : ""}
+    ${p.vaga ? `<div class="faixa aviso"><span class="selo-vaga">VAGA</span><div>Ainda vai ser contratada. Quando a pessoa entrar e aparecer na Senior, o aviso "Entrou na Senior" mostra o botão para ela ocupar esta vaga com estes horários e folgas.</div></div>
+    <div class="horarios">
+      <label class="campo"><span>Nome da vaga</span><input id="pNomeVaga" maxlength="60" value="${esc(p.nome)}" ${travar ? "disabled" : ""}></label>
+      <label class="campo"><span>Começa no dia</span><select id="pInicio" ${travar ? "disabled" : ""}>${E.dias.map((x) => `<option value="${x.iso}" ${x.iso === (p.inicio || E.dias[0].iso) ? "selected" : ""}>${DIAS_CURTO[x.w]} ${dataTxt(x)}${x === E.dias[0] ? " (mês todo)" : ""}</option>`).join("")}</select></label>
+    </div>` : ""}
     <div class="horarios">
       <label class="campo"><span>Setor</span><select id="pSetor" ${travar ? "disabled" : ""}>${setores.map((s) => `<option ${s === p.setor ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
       <label class="campo"><span>Horas por semana</span><select id="pHoras" ${travar ? "disabled" : ""}>${[42, 36, 30, 24, 20].map((h) => `<option value="${h}" ${h === p.horas ? "selected" : ""}>${h}h</option>`).join("")}</select></label>
@@ -783,16 +844,18 @@ function abrirPessoa(pid) {
     <div class="lista-problemas">${probs.length ? probs.map(itemProblema).join("") : `<div class="faixa ok">${ic("check")} Nenhuma regra quebrada.</div>`}</div>
     ${travar ? "" : `<div class="linha" style="margin-top:16px">
       ${o && !p.fora ? `<button class="btn" id="pPadrao">Voltar a pessoa ao padrão</button>` : ""}
-      ${p.fora ? `<button class="btn primario" id="pVolta">Trazer de volta para a escala</button>` : p.novo ? `<button class="btn perigo" id="pApaga">Tirar esta pessoa (incluída por engano)</button>` : `<button class="btn perigo" id="pFora">Tirar da escala</button>`}
+      ${p.fora ? `<button class="btn primario" id="pVolta">Trazer de volta para a escala</button>` : p.vaga ? `<button class="btn perigo" id="pApaga">Apagar esta vaga</button>` : p.novo ? `<button class="btn perigo" id="pApaga">Tirar esta pessoa (incluída por engano)</button>` : `<button class="btn perigo" id="pFora">Tirar da escala</button>`}
     </div>`}`);
   $("#fechar", pn).onclick = fecharPainel;
   if (travar) return;
   $("#pSetor", pn).onchange = (e) => { alterar(() => { p.setor = e.target.value; }, "Setor mudado."); abrirPessoa(pid); };
+  const nv = $("#pNomeVaga", pn); if (nv) nv.onchange = () => { const v = nv.value.trim(); if (v.length < 3) { nv.value = p.nome; return; } alterar(() => { p.nome = v; p.nomeCompleto = v; }, "Nome da vaga mudado."); abrirPessoa(pid); };
+  const pi = $("#pInicio", pn); if (pi) pi.onchange = () => { alterar(() => aplicarInicio(p, pi.value), pi.value > E.dias[0].iso ? `A vaga começa em ${isoBr(pi.value)}. Confira as folgas da primeira semana.` : "A vaga vale o mês todo."); abrirPessoa(pid); };
   const sub = $("#pSub", pn); if (sub) sub.onchange = (e) => { alterar(() => { p.subGerente = e.target.checked; }, e.target.checked ? `${p.nome} agora pode abrir e fechar no lugar do gerente.` : `${p.nome} não substitui mais o gerente.`); abrirPessoa(pid); };
   $("#pHoras", pn).onchange = (e) => { alterar(() => { p.horas = +e.target.value; }, `Agora ${e.target.value}h por semana. Confira os horários.`); abrirPessoa(pid); };
   const bp = $("#pPadrao", pn); if (bp) bp.onclick = () => { alterar(() => { Object.assign(p, clone(o)); }, "Pessoa voltou ao padrão."); abrirPessoa(pid); };
   const bv = $("#pVolta", pn); if (bv) bv.onclick = () => { alterar(() => { delete p.fora; }, "Voltou para a escala."); abrirPessoa(pid); };
-  const ba = $("#pApaga", pn); if (ba) ba.onclick = () => { alterar(() => { E.pessoas = E.pessoas.filter((q) => q.id !== pid); }, "Pessoa tirada."); fecharPainel(); };
+  const ba = $("#pApaga", pn); if (ba) ba.onclick = () => { alterar(() => { E.pessoas = E.pessoas.filter((q) => q.id !== pid); }, p.vaga ? "Vaga apagada." : "Pessoa tirada."); fecharPainel(); };
   const bf = $("#pFora", pn); if (bf) bf.onclick = () => modal(`<h2>Tirar ${esc(p.nome)} da escala</h2><p class="dica">A pessoa some da escala deste mês (dá para trazer de volta depois).</p>
     <label class="campo"><span>Motivo</span><select id="mot"><option>Saiu da empresa</option><option>Afastada (atestado, INSS, licença)</option><option>Férias no mês</option><option>Mudou de loja</option><option>Outro</option></select></label>`,
     [{ rotulo: "Cancelar" }, { rotulo: "Tirar da escala", tipo: "primario", fn: (m) => { const mot = $("#mot", m).value; alterar(() => { p.fora = { motivo: mot }; }, "Pessoa tirada da escala."); fecharPainel(); } }]);
@@ -805,18 +868,27 @@ function incluirPessoa(pre) {
   const setores = [...new Set(setoresDe(E).concat(ORDEM_SETOR.slice(0, 9)))];
   const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const setorPre = setores.find((s) => norm(pre.setor).includes(norm(s)) || norm(s).includes(norm(pre.setor) || "§")) || pre.setorEscala || "";
-  modal(`<h2>Incluir pessoa</h2><p class="dica">Para quem entrou agora ou veio de outra loja. A escala dela começa igual à de um colega do mesmo setor; depois é só ajustar.</p>
-    <label class="campo"><span>Nome</span><input id="nNome" placeholder="Nome e sobrenome" value="${esc(pre.nome || "")}"></label>
+  const vagaPre = !!pre.vaga && pre.chave == null;
+  modal(`<h2>Incluir pessoa</h2>
+    ${pre.chave != null ? "" : `<div class="escolha" id="nTipo"><button data-tipo="p" class="${vagaPre ? "" : "sel"}">Pessoa do quadro</button><button data-tipo="v" class="${vagaPre ? "sel" : ""}">Vaga: ainda vai contratar</button></div>`}
+    <p class="dica" id="nDica"></p>
+    <label class="campo"><span id="nNomeRot">Nome</span><input id="nNome" placeholder="Nome e sobrenome" value="${esc(pre.nome || "")}"></label>
     <div class="horarios"><label class="campo"><span>Setor</span><select id="nSetor">${setores.map((s) => `<option ${s === setorPre ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
     <label class="campo"><span>Horas por semana</span><select id="nHoras"><option value="42">42h</option><option value="30">30h</option><option value="24">24h</option></select></label></div>
-    <label class="campo"><span>Entrada de costume</span><select id="nIni">${opcoesHora(495, 300, 1320)}</select></label>`,
+    <div class="horarios"><label class="campo"><span>Entrada de costume</span><select id="nIni">${opcoesHora(495, 300, 1320)}</select></label>
+    <label class="campo"><span>Folga fixa</span><select id="nFixa"><option value="">Igual à de um colega do setor</option>${[1, 2, 3, 4, 5].map((w) => `<option value="${w}">${DIAS_SEM[w]}</option>`).join("")}</select></label></div>
+    <label class="campo" id="nInicioC"><span>Começa no dia</span><select id="nInicio">${E.dias.map((x, k) => `<option value="${x.iso}">${DIAS_CURTO[x.w]} ${dataTxt(x)}${k === 0 ? " (mês todo)" : ""}</option>`).join("")}</select></label>`,
   [{ rotulo: "Cancelar" }, { rotulo: "Incluir", tipo: "primario", fn: (m) => {
-    const nome = $("#nNome", m).value.trim(), setor = $("#nSetor", m).value, horas = +$("#nHoras", m).value, ini = +$("#nIni", m).value;
+    const ehVaga = !!$("#nTipo [data-tipo='v'].sel", m);
+    const setor = $("#nSetor", m).value, horas = +$("#nHoras", m).value, ini = +$("#nIni", m).value, fixa = $("#nFixa", m).value;
+    const nome = $("#nNome", m).value.trim() || (ehVaga ? proximoNomeVaga(setor) : "");
     if (nome.length < 3) { toast("Escreva o nome."); return false; }
-    const base = E.pessoas.find((q) => !q.fora && q.setor === setor && q.horas === horas) || E.pessoas.find((q) => !q.fora && q.horas === horas) || E.pessoas.find((q) => !q.fora);
-    const np = { id: "n" + Date.now().toString(36), ...(pre.chave != null ? { chave: +pre.chave } : {}), nome, nomeCompleto: nome, cargo: "", setor, horas, novo: true, entradaAtual: null, turno: null, saidaMax: null, entradaMin: null, semDomingo: false, semFeriado: false, dias: [] };
+    const base = colegaModelo(setor, horas);
+    const np = { id: "n" + Date.now().toString(36), ...(pre.chave != null ? { chave: +pre.chave } : {}), nome, nomeCompleto: nome, cargo: "", setor, horas, novo: true, ...(ehVaga ? { vaga: true } : {}), entradaAtual: null, turno: null, saidaMax: null, entradaMin: null, semDomingo: horas === 30, semFeriado: false, dias: [] };
     np.dias = E.dias.map((x, i) => {
-      const c = base ? base.dias[i] : { t: x.w === 0 || x.w === 6 ? "F" : "T" };
+      let c = base ? base.dias[i] : { t: x.w === 0 || x.w === 6 ? "F" : "T" };
+      if (c.t === "A" || c.t === "V" || c.t === "N") c = { t: "T" }; // afastamento do colega não passa para a pessoa nova
+      if (horas === 30 && x.w === 0 && !x.fechado) c = { t: "D" };
       if (c.t !== "T") return clone(c);
       const lim = limiteDia(np), alm = lim > 360 ? 120 : lim > 240 ? 15 : 0;
       let d = montarDia(ini, ini + lim + alm, null, alm);
@@ -824,10 +896,41 @@ function incluirPessoa(pre) {
       if (x.ws != null && d.ini < x.ws) { const dl = x.ws - d.ini; d.ini += dl; d.fim = Math.min(d.fim + dl, x.we); if (d.alm) d.alm = [d.alm[0] + dl, d.alm[1] + dl]; }
       return d;
     });
-    alterar(() => { E.pessoas.push(np); }, `${nome} incluída.`);
+    if (fixa) moverFolgaFixa(np, +fixa);
+    if (ehVaga) aplicarInicio(np, $("#nInicio", m).value);
+    alterar(() => { E.pessoas.push(np); }, ehVaga ? `${nome} incluída. Ela aparece na escala com o selo VAGA.` : `${nome} incluída.`);
     setTimeout(() => abrirPessoa(np.id), 50);
   } }]);
-  setTimeout(() => { const n = $("#nNome"); if (n) n.focus(); }, 50);
+  setTimeout(() => {
+    const f = $$(".modal-fundo").pop(); if (!f) return;
+    const ajustar = () => {
+      const v = !!$("#nTipo [data-tipo='v'].sel", f);
+      $("#nDica", f).textContent = v ? "Para quem ainda vai ser contratado. A vaga entra na escala com horário e folgas e conta na cobertura. Quando a pessoa entrar na Senior, ela ocupa a vaga." : "Para quem entrou agora ou veio de outra loja. A escala dela começa igual à de um colega do mesmo setor; depois é só ajustar.";
+      $("#nNomeRot", f).textContent = v ? "Nome da vaga" : "Nome";
+      $("#nNome", f).placeholder = v ? proximoNomeVaga($("#nSetor", f).value) : "Nome e sobrenome";
+      $("#nInicioC", f).style.display = v ? "" : "none";
+    };
+    $$("#nTipo [data-tipo]", f).forEach((b) => (b.onclick = () => { $$("#nTipo [data-tipo]", f).forEach((o) => o.classList.toggle("sel", o === b)); ajustar(); }));
+    $("#nSetor", f).onchange = ajustar;
+    ajustar();
+    const n = $("#nNome", f); if (n) n.focus();
+  }, 50);
+}
+/* põe a folga da semana no dia escolhido (segunda a sexta), trocando com a folga que estava em outro dia útil */
+function moverFolgaFixa(p, w) {
+  (E.semanas || []).forEach((S) => {
+    const j = S.dias.find((i) => E.dias[i].w === w);
+    if (j == null || p.dias[j].t !== "T" || E.dias[j].fechado) return;
+    const cands = S.dias.filter((i) => i !== j && p.dias[i].t === "F" && E.dias[i].w >= 1 && E.dias[i].w <= 5 && !E.dias[i].fechado);
+    if (!cands.length) return;
+    // troca com a folga que deixa a maior sequência de dias trabalhados mais curta (5x2: no máximo 5 seguidos)
+    const maiorSeq = (ds) => { let m = 0, s = 0; ds.forEach((c) => { s = c.t === "T" ? s + 1 : 0; m = Math.max(m, s); }); return m; };
+    const testa = (k) => { const ds = p.dias.slice(); ds[k] = ajustarParaDia(p.dias[j], k, p); ds[j] = { t: "F" }; return ds; };
+    const atual = maiorSeq(p.dias);
+    const op = cands.map((k) => ({ k, ds: testa(k) })).map((o) => ({ ...o, seq: maiorSeq(o.ds), dist: Math.abs(o.k - j) })).sort((a, b) => a.seq - b.seq || a.dist - b.dist)[0];
+    if (op.seq > Math.max(5, atual)) return; // não piora a regra dos 5 dias seguidos
+    p.dias = op.ds;
+  });
 }
 
 /* ================= DIA A DIA ================= */
@@ -921,14 +1024,14 @@ function telaEquipe(c) {
       ${pouco ? (s === "Gerência" ? `<p class="dica" style="color:var(--erro)">Só ${n} ${n === 1 ? "gerente" : "gerentes"}: com 5x2 não dá para ter gerente abrindo e fechando todo dia (precisa de 3). Toque em alguém de confiança (fiscal, encarregado) e marque <b>"Substitui o gerente"</b>${subs.length ? `. Substitutos hoje: ${subs.map((q) => esc(q.nome)).join(", ")}` : ""}.</p>` : `<p class="dica" style="color:var(--erro)">Setor obrigatório com ${n} ${n === 1 ? "pessoa" : "pessoas"}: com folgas e almoço não dá para cobrir todos os horários. O ideal é pelo menos 3.</p>`) : ""}
       <div class="eq-lista">${ps.map((p) => { const r = resumoPessoa(p); const comb = [p.subGerente && "substitui o gerente", p.entradaMin && `entra a partir das ${p.entradaMin}`, p.saidaMax && `sai até as ${p.saidaMax}`, p.semDomingo && p.horas !== 30 && "não trabalha domingo", p.semFeriado && "não trabalha feriado"].filter(Boolean);
         return `<button class="eq-pessoa" data-p="${esc(p.id)}"><span class="eq-avatar ${r.turno === "manhã" ? "m" : "t"}">${esc(p.nome.split(" ").map((x) => x[0]).slice(0, 2).join(""))}</span>
-          <span class="eq-info"><b>${esc(p.nome)}</b><small>${esc(tituloBonito(p.cargo || ""))}${p.novo ? " · incluída" : ""}</small>
+          <span class="eq-info"><b>${p.vaga ? '<span class="selo-vaga">VAGA</span>' : ""}${esc(p.nome)}</b><small>${p.vaga ? (p.inicio ? "a contratar · começa " + isoBr(p.inicio) : "a contratar") : esc(tituloBonito(p.cargo || "")) + (p.novo ? " · incluída" : "")}</small>
           <span class="eq-tags"><i>${p.horas}h</i><i>${esc(r.horario)}</i><i>folga fixa: ${esc(r.folgaFixa)}</i><i>domingo: ${esc(r.domingo)}</i>${comb.map((t) => `<i class="comb">${esc(t)}</i>`).join("")}</span></span></button>`; }).join("")}</div></details>`;
   }).join("");
   const fora = E.pessoas.filter((p) => p.fora);
   c.innerHTML = `${faixaAlertas()}
   <section class="cartao"><h1>Equipe</h1>
     <p class="dica">Quem está na escala de ${esc(mesTxt(ESC.mes))}, separado por setor. Toque no setor para ver as pessoas; toque na pessoa para ver o mês dela, mudar o setor ou as horas.</p>
-    <div class="numeros"><div class="numero"><b>${total}</b><span>pessoas na escala</span></div><div class="numero"><b>${setores.length}</b><span>setores</span></div><div class="numero"><b>${total - h30}</b><span>de 42h</span></div><div class="numero"><b>${h30}</b><span>de 30h (folgam todo domingo)</span></div></div>
+    <div class="numeros"><div class="numero"><b>${total - vagas().length}</b><span>pessoas na escala${vagas().length ? ` + ${vagas().length} ${vagas().length === 1 ? "vaga" : "vagas"} a contratar` : ""}</span></div><div class="numero"><b>${setores.length}</b><span>setores</span></div><div class="numero"><b>${total - h30}</b><span>de 42h</span></div><div class="numero"><b>${h30}</b><span>de 30h (folgam todo domingo)</span></div></div>
     <details class="abre"><summary>Pessoas por setor</summary><div><div class="hbarras">${porSetorNum.map((x) => `<div class="hbarra"><span class="hb-nome">${esc(x.s)}</span><div class="hb-pista"><div class="barra ${obrig[x.s] && x.n < 3 ? "cob-barra vermelho" : ""}" style="width:${(x.n / maxN) * 100}%"></div></div><span class="hb-val">${x.n}</span></div>`).join("")}</div></div></details>
     <div class="ferramentas" style="margin:10px 0 0"><input class="busca" id="eqBusca" placeholder="Procurar por nome, cargo ou setor" value="${esc(EQ.busca)}" aria-label="Procurar">${travada() ? "" : `<span style="flex:1"></span><button class="btn" id="eqIncluir">${ic("mais")} Incluir pessoa</button>`}</div>
   </section>
@@ -1093,6 +1196,7 @@ function telaAjuda(c) {
       <li><div><b>Trocar a folga de dia:</b> toque na folga (F) e depois no dia da semana em que a pessoa vai folgar no lugar.</div></li>
       <li><div><b>Toque no nome da pessoa</b> para ver as horas de cada semana, mudar o setor ou as horas do contrato, voltar a pessoa ao padrão ou tirar da escala (saiu, afastou).</div></li>
       <li><div><b>"Incluir pessoa"</b> serve para quem entrou agora. A escala dela começa igual à de um colega do setor.</div></li>
+      <li><div><b>Vaga</b> (em "Incluir pessoa"): para quem ainda vai ser contratado. Entra na escala com horário, folga fixa e dia de início, aparece com o selo VAGA e conta na cobertura. Quando a pessoa entrar na Senior, o aviso dela tem o botão "Ocupar a vaga".</div></li>
       <li><div><b>"Dia a dia"</b> mostra quem está na loja em cada hora, setor por setor, e se o número de pessoas dá conta do movimento.</div></li>
       <li><div><b>"O que arrumar"</b> lista o que quebra alguma regra. Tudo vermelho precisa ser arrumado antes de lançar. O amarelo é só aviso.</div></li>
       <li><div><b>"Lançar escala"</b> no Início. A escala fica travada e o escritório vê que a sua loja lançou. Para mudar depois, toque em "Reabrir".</div></li>
@@ -1173,25 +1277,26 @@ function telaRegras(c) {
 }
 
 /* ================= IMPRIMIR E EXCEL ================= */
-const celTxt = (x, c) => (c.t === "T" ? `${hm(c.ini)}-${hm(c.fim)}` : c.t === "X" ? "FERIADO" : c.t === "A" ? "AFASTADO" : c.t === "V" ? "FÉRIAS" : x.fechado ? "" : c.t === "D" ? "DOM" : "FOLGA");
+const nomeExp = (p) => p.vaga ? `${p.nome} (VAGA a contratar)` : p.nome;
+const celTxt = (x, c) => (c.t === "T" ? `${hm(c.ini)}-${hm(c.fim)}` : c.t === "X" ? "FERIADO" : c.t === "A" ? "AFASTADO" : c.t === "V" ? "FÉRIAS" : c.t === "N" ? "-" : x.fechado ? "" : c.t === "D" ? "DOM" : "FOLGA");
 function imprimir() {
   const setores = setoresDe(E);
   const cab = `<tr><th>Nome</th>${E.dias.map((x) => `<th>${LETRA[x.w]}<br>${x.d}</th>`).join("")}</tr>`;
   $("#impressao").innerHTML = `<h1>${esc(ESC.loja_nome)} · escala de ${esc(mesTxt(ESC.mes))}${ESC.status === "lancada" ? ` · lançada em ${esc(quando(ESC.lancada_em))}` : " · NÃO LANÇADA (rascunho)"}</h1>
-    <table>${cab}${setores.map((s) => `<tr><td colspan="${E.dias.length + 1}" class="n"><b>${esc(s)}</b></td></tr>` + E.pessoas.filter((p) => !p.fora && p.setor === s).map((p) => `<tr><td class="n">${esc(p.nome)}${p.horas !== 42 ? ` (${p.horas}h)` : ""}</td>${E.dias.map((x, i) => { const c = p.dias[i]; return `<td class="${c.t === "T" ? "" : c.t === "D" ? "d" : "f"}">${c.t === "T" ? `${hm(c.ini)}<br>${hm(c.fim)}` : c.t === "X" ? "FER" : c.t === "A" ? "AFAST" : c.t === "V" ? "FÉRIAS" : x.fechado ? "" : c.t === "D" ? "DOM" : "F"}</td>`; }).join("")}</tr>`).join("")).join("")}</table>
+    <table>${cab}${setores.map((s) => `<tr><td colspan="${E.dias.length + 1}" class="n"><b>${esc(s)}</b></td></tr>` + E.pessoas.filter((p) => !p.fora && p.setor === s).map((p) => `<tr><td class="n">${esc(nomeExp(p))}${p.horas !== 42 ? ` (${p.horas}h)` : ""}</td>${E.dias.map((x, i) => { const c = p.dias[i]; return `<td class="${c.t === "T" ? "" : c.t === "D" ? "d" : "f"}">${c.t === "T" ? `${hm(c.ini)}<br>${hm(c.fim)}` : c.t === "X" ? "FER" : c.t === "A" ? "AFAST" : c.t === "V" ? "FÉRIAS" : c.t === "N" ? "-" : x.fechado ? "" : c.t === "D" ? "DOM" : "F"}</td>`; }).join("")}</tr>`).join("")).join("")}</table>
     <p style="margin-top:4px">Em cada dia: entrada em cima, saída embaixo. F = folga. DOM = folga no domingo. Impresso em ${new Date().toLocaleString("pt-BR")}.</p>`;
   window.print();
 }
 function baixarExcel() {
   if (!window.XLSX) { toast("O Excel ainda está carregando. Tente de novo em alguns segundos."); return; }
   const linhas = [[`${ESC.loja_nome} · escala de ${mesTxt(ESC.mes)}${ESC.status === "lancada" ? " · lançada" : " · rascunho"}`], [], ["Setor", "Nome", "Horas/semana", ...E.dias.map((x) => `${DIAS_CURTO[x.w]} ${dataTxt(x)}`)]];
-  setoresDe(E).forEach((s) => E.pessoas.filter((p) => !p.fora && p.setor === s).forEach((p) => linhas.push([s, p.nome, p.horas, ...E.dias.map((x, i) => celTxt(x, p.dias[i]))])));
+  setoresDe(E).forEach((s) => E.pessoas.filter((p) => !p.fora && p.setor === s).forEach((p) => linhas.push([s, nomeExp(p), p.horas, ...E.dias.map((x, i) => celTxt(x, p.dias[i]))])));
   const ws = XLSX.utils.aoa_to_sheet(linhas);
   ws["!cols"] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, ...E.dias.map(() => ({ wch: 12 }))];
   ws["!freeze"] = { xSplit: 3, ySplit: 3 };
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Escala");
   const det = [["Nome", "Data", "Dia", "Situação", "Entrada", "Intervalo", "Volta", "Saída", "Horas"]];
-  E.pessoas.filter((p) => !p.fora).forEach((p) => E.dias.forEach((x, i) => { const c = p.dias[i]; det.push([p.nome, dataTxt(x), DIAS_CURTO[x.w], c.t === "T" ? "trabalha" : c.t === "X" ? "feriado" : "folga", c.t === "T" ? hm(c.ini) : "", c.alm ? hm(c.alm[0]) : "", c.alm ? hm(c.alm[1]) : "", c.t === "T" ? hm(c.fim) : "", c.t === "T" ? horasTxt(trabDe(c)) : ""]); }));
+  E.pessoas.filter((p) => !p.fora).forEach((p) => E.dias.forEach((x, i) => { const c = p.dias[i]; det.push([nomeExp(p), dataTxt(x), DIAS_CURTO[x.w], c.t === "T" ? "trabalha" : c.t === "X" ? "feriado" : c.t === "N" ? "ainda não entrou" : c.t === "A" ? "afastado" : c.t === "V" ? "férias" : "folga", c.t === "T" ? hm(c.ini) : "", c.alm ? hm(c.alm[0]) : "", c.alm ? hm(c.alm[1]) : "", c.t === "T" ? hm(c.fim) : "", c.t === "T" ? horasTxt(trabDe(c)) : ""]); }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(det), "Dia a dia");
   XLSX.writeFile(wb, `Escala ${ESC.loja_nome} ${ESC.mes}.xlsx`);
 }

@@ -11,8 +11,8 @@ const horasTxt = (m) => { m = Math.round(m); const h = Math.floor(m / 60), r = m
 const dataTxt = (x) => String(x.d).padStart(2, "0") + "/" + x.iso.slice(5, 7);
 const trabDe = (c) => (c && c.t === "T" ? c.fim - c.ini - (c.alm ? c.alm[1] - c.alm[0] : 0) : 0);
 const limiteDia = (p) => Math.round((p.horas * 60) / 5);
-/* dias em que a pessoa não está por motivo que não é folga: X = feriado com loja fechada, A = afastado (atestado, INSS, saiu), V = férias */
-const AUSENCIA = ["X", "A", "V"];
+/* dias em que a pessoa não está por motivo que não é folga: X = feriado com loja fechada, A = afastado (atestado, INSS, saiu), V = férias, N = ainda não entrou (vaga antes do dia de início) */
+const AUSENCIA = ["X", "A", "V", "N"];
 const ehFolga = (c) => c && (c.t === "F" || c.t === "D");
 const ativos = (E) => E.pessoas.filter((p) => !p.fora);
 
@@ -172,7 +172,7 @@ function validarTudo(E, P) {
 
 /* diferenças entre a escala do gerente e a padrão */
 const mesmoDia = (a, b) => a.t === b.t && (a.t !== "T" || (a.ini === b.ini && a.fim === b.fim && JSON.stringify(a.alm || null) === JSON.stringify(b.alm || null)));
-const diaTxt = (c) => (c.t === "T" ? `${hm(c.ini)} às ${hm(c.fim)}` : c.t === "D" ? "folga (domingo)" : c.t === "X" ? "feriado" : c.t === "A" ? "afastado" : c.t === "V" ? "férias" : "folga");
+const diaTxt = (c) => (c.t === "T" ? `${hm(c.ini)} às ${hm(c.fim)}` : c.t === "D" ? "folga (domingo)" : c.t === "X" ? "feriado" : c.t === "A" ? "afastado" : c.t === "V" ? "férias" : c.t === "N" ? "ainda não entrou" : "folga");
 function mudancas(E, P) {
   const out = [], pad = Object.fromEntries(P.pessoas.map((p) => [p.id, p]));
   E.pessoas.forEach((p) => {
