@@ -166,7 +166,27 @@ function podeSairDoPadrao() {
   return new Promise((ok) => modal(`<h2>Guardar o que você mexeu?</h2><p>Você mudou a escala padrão e ainda não salvou. A padrão não muda: para guardar, salve com um nome.</p>`,
     [{ rotulo: "Cancelar", fn: () => ok(false) }, { rotulo: "Jogar fora", fn: () => { SUJO = false; ok(true); } }, { rotulo: "Salvar com nome", tipo: "primario", fn: async () => { const r = await salvarComNome(); ok(!!r); } }]));
 }
-function recalcular() { VAL = validarTudo(E, P); MUD = mudancas(E, P); }
+let COB = null;
+function recalcular() { VAL = validarTudo(E, P); MUD = mudancas(E, P); COB = indiceCobertura(E, P.necMes, P.horas); }
+const pct = (v) => (v == null ? "-" : (Math.round(v * 1000) / 10).toLocaleString("pt-BR") + "%");
+const corPct = (v, bom, ok) => (v >= bom ? "verde" : v >= ok ? "amarelo" : "vermelho");
+/* cartão do índice de cobertura (Início) */
+function cartaoCobertura() {
+  if (!COB) return "";
+  const pad = indiceCobertura(sanear(P, P), P.necMes, P.horas);
+  const dif = (a, b) => { const d = Math.round((a - b) * 1000) / 10; return Math.abs(d) < 0.1 ? "igual à padrão" : `${d > 0 ? "+" : ""}${d.toLocaleString("pt-BR")} pontos em relação à padrão`; };
+  return `<section class="cartao"><h2>Índice de cobertura da loja</h2>
+    <p class="dica">Quanto da necessidade do mês esta escala atende. Muda na hora quando a escala é mexida.</p>
+    <div class="numeros">
+      <div class="numero ${corPct(COB.geral, 0.85, 0.75)}"><b>${pct(COB.geral)}</b><span>cobertura geral: das pessoas que o movimento pede, hora a hora e setor por setor${ABERTA || SUJO ? ` · ${esc(dif(COB.geral, pad.geral))}` : ""}</span></div>
+      <div class="numero ${corPct(COB.obrig, 0.98, 0.9)}"><b>${pct(COB.obrig)}</b><span>do tempo aberto com operadora, açougue, padaria e fiscal juntos${ABERTA || SUJO ? ` · ${esc(dif(COB.obrig, pad.obrig))}` : ""}</span></div>
+      <div class="numero"><b>${Math.round(COB.horasFaltando).toLocaleString("pt-BR")}h</b><span>faltando no mês (horas em que o movimento pede mais gente)</span></div>
+      <div class="numero"><b>${Math.round(COB.horasSobrando).toLocaleString("pt-BR")}h</b><span>sobrando no mês (gente além do movimento)</span></div>
+    </div>
+    <p class="dica">Tem hora faltando e hora sobrando ao mesmo tempo? Dá para melhorar mudando entrada, saída ou almoço para o horário de pico (veja "Movimento e pessoas").</p>
+    <details class="abre"><summary>Cobertura de cada setor</summary><div><div class="hbarras">${COB.setores.map((s) => `<div class="hbarra" title="${esc(s.setor)}: ${pct(s.pct)}"><span class="hb-nome">${esc(s.setor)}</span><div class="hb-pista"><div class="barra cob-barra ${corPct(s.pct, 0.85, 0.75)}" style="width:${Math.min(100, s.pct * 100)}%"></div></div><span class="hb-val">${pct(s.pct)}</span></div>`).join("")}</div></div></details>
+  </section>`;
+}
 /* A escala que o gerente grava pode ter qualquer coisa. Ao abrir, a estrutura do mês vem sempre do padrão
    (que só o escritório grava) e o resto é forçado para número ou texto, para nada virar código na tela. */
 /* horário combinado: o banco guarda em minutos (1060) ou texto ("17:40"); vira sempre "17:40" */
@@ -326,16 +346,18 @@ async function telaLojas(c) {
       const vs = r2.data.filter((v) => v.escala_id === r.id), ult = vs[0];
       const base = r.status === "lancada" ? r.atual : ult ? ult.dados : r.padrao;
       const a = sanear(base, r.padrao), v = validarTudo(a, r.padrao);
-      return [r.id, { erros: v.erros.length, cob: v.cobertura.length, mud: mudancas(a, r.padrao).length, pessoas: a.pessoas.filter((p) => !p.fora).length, salvas: vs.length, ult }];
+      const ic_ = indiceCobertura(a, r.padrao.necMes, r.padrao.horas) || {};
+      return [r.id, { erros: v.erros.length, cob: v.cobertura.length, geral: ic_.geral, obrig: ic_.obrig, mud: mudancas(a, r.padrao).length, pessoas: a.pessoas.filter((p) => !p.fora).length, salvas: vs.length, ult }];
     }));
   }
   const alvo = $("#tabLojas"); if (!alvo) return;
   const lanc = LISTA.filter((l) => l.status === "lancada").length;
   alvo.innerHTML = `<div class="numeros"><div class="numero verde"><b>${lanc}</b><span>lançadas</span></div><div class="numero amarelo"><b>${LISTA.length - lanc}</b><span>ainda não lançadas</span></div></div>
     <p class="dica">Nas lojas que não lançaram, os números são da última escala que o gerente salvou (ou da padrão, se ele ainda não salvou nenhuma).</p>
-    <div class="rolagem"><table class="tab"><thead><tr><th>Loja</th><th>Mês</th><th>Situação</th><th>Escalas salvas</th><th>Mudanças da padrão</th><th>A arrumar</th><th>Horários sem setor obrigatório</th><th>Última mexida</th></tr></thead><tbody>
+    <div class="rolagem"><table class="tab"><thead><tr><th>Loja</th><th>Mês</th><th>Situação</th><th>Cobertura geral</th><th>Obrigatórios juntos</th><th>Escalas salvas</th><th>Mudanças da padrão</th><th>A arrumar</th><th>Horários sem setor obrigatório</th><th>Última mexida</th></tr></thead><tbody>
     ${LISTA.map((l) => { const r = RESUMO[l.id] || {}; return `<tr class="clica" data-id="${esc(l.id)}"><td><b>${esc(l.loja_nome)}</b><br><span class="mini">${r.pessoas ?? ""} pessoas</span></td><td>${esc(mesTxt(l.mes))}</td>
       <td>${l.status === "lancada" ? `<span class="status lancada">${ic("check")} Lançada</span><br><span class="mini">"${esc(l.lancada_nome || "Escala padrão")}" · ${esc(quando(l.lancada_em))} · ${esc(l.lancada_por || "")}</span>` : `<span class="status rascunho">Não lançada</span>`}</td>
+      <td><span class="pct ${corPct(r.geral ?? 0, 0.85, 0.75)}">${pct(r.geral)}</span></td><td><span class="pct ${corPct(r.obrig ?? 0, 0.98, 0.9)}">${pct(r.obrig)}</span></td>
       <td>${r.salvas || "nenhuma"}</td><td>${r.mud ? r.mud : "nenhuma"}</td><td>${r.erros ? `<b style="color:var(--erro)">${r.erros}</b>` : "nada"}</td><td>${r.cob ? `<b style="color:var(--erro)">${r.cob}</b>` : "nenhum"}</td>
       <td class="mini">${r.ult ? `${esc(r.ult.atualizado_por || "")} em "${esc(r.ult.nome)}"<br>${esc(quando(r.ult.atualizado_em))}` : "ninguém mexeu"}</td></tr>`; }).join("")}
     </tbody></table></div>`;
@@ -367,6 +389,7 @@ function telaInicio(c) {
       ${v.erros.length && !lancada ? `<a class="btn" href="#/avisos">Ver o que arrumar</a>` : ""}
     </div>
   </section>
+  ${cartaoCobertura()}
   <section class="cartao"><h2>Escalas da loja</h2>
     <p class="dica">A escala padrão é a que veio pronta e nunca muda. As outras são as que vocês salvaram.</p>
     <table class="tab"><tbody>

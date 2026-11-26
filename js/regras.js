@@ -123,6 +123,34 @@ function avisosLoja(E) {
   return out;
 }
 
+/* Índice de cobertura da loja no mês.
+   geral = parte da necessidade (pessoas que o movimento pede, hora a hora, setor por setor) que a escala atende, descontando os intervalos.
+   obrig = parte do tempo de loja aberta com operadora, açougue, padaria e fiscal ao mesmo tempo. */
+function indiceCobertura(E, nec, horas) {
+  let pede = 0, atende = 0, falta = 0, sobra = 0, meias = 0, meiasOk = 0;
+  const porSetor = {};
+  if (!nec || !horas) return null;
+  E.dias.forEach((x, i) => {
+    if (x.fechado || x.abre == null) return;
+    Object.keys(nec).forEach((s) => {
+      const n = nec[s] && nec[s][i]; if (!n) return;
+      const pr = presenca(E, i, s); if (!pr) return;
+      horas.forEach((h, k) => {
+        const v = n[k]; if (v == null) return;
+        const ks = []; pr.slots.forEach((t, j) => { if (t >= h * 60 && t < h * 60 + 60) ks.push(j); });
+        if (!ks.length) return;
+        const e = ks.reduce((a, j) => a + pr.cont[j], 0) / ks.length;
+        pede += v; atende += Math.min(e, v); falta += Math.max(0, v - e); sobra += Math.max(0, e - v);
+        const ps = (porSetor[s] = porSetor[s] || { pede: 0, atende: 0 }); ps.pede += v; ps.atende += Math.min(e, v);
+      });
+    });
+    const prs = SETORES_OBRIGATORIOS.map(([s]) => presenca(E, i, s));
+    prs[0].slots.forEach((t, j) => { meias++; if (prs.every((p) => p.cont[j] > 0)) meiasOk++; });
+  });
+  const setores = Object.entries(porSetor).map(([s, v]) => ({ setor: s, pct: v.pede ? v.atende / v.pede : 1 })).sort((a, b) => a.pct - b.pct);
+  return { geral: pede ? atende / pede : 1, obrig: meias ? meiasOk / meias : 1, horasFaltando: falta, horasSobrando: sobra, setores };
+}
+
 function validarTudo(E, P) {
   const porPessoa = {}, lista = [], pad = P ? Object.fromEntries(P.pessoas.map((p) => [p.id, p])) : {};
   ativos(E).forEach((p) => { const v = validarPessoa(E, p, pad[p.id]); porPessoa[p.id] = v; lista.push(...v); });
@@ -146,4 +174,4 @@ function mudancas(E, P) {
   return out;
 }
 
-if (typeof module !== "undefined") module.exports = { hm, minDe, trabDe, validarPessoa, validarTudo, avisosLoja, mudancas, presenca, montarDia, saidaPara, limiteDia, intervaloPedido };
+if (typeof module !== "undefined") module.exports = { indiceCobertura, hm, minDe, trabDe, validarPessoa, validarTudo, avisosLoja, mudancas, presenca, montarDia, saidaPara, limiteDia, intervaloPedido };

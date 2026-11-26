@@ -273,6 +273,9 @@ details.abre > div { padding-bottom: 14px; }
 .selo-regra.acordo { background: var(--fer); color: var(--fer-txt); }
 .selo-regra.emp { background: var(--aviso-fundo); color: var(--aviso); }
 .grade2 + details.abre { margin-top: 16px; }
+.pct { font-weight: 800; font-family: var(--titulo); font-size: 1.05rem; }
+.pct.verde { color: var(--ok); } .pct.amarelo { color: var(--aviso); } .pct.vermelho { color: var(--erro); }
+.cob-barra.verde { background: var(--ok) !important; } .cob-barra.amarelo { background: var(--amarelo) !important; } .cob-barra.vermelho { background: var(--erro) !important; }
 .impressao { display: none; }
 @media (max-width: 720px) {
   .topo { padding: 8px 16px; gap: 8px; flex-wrap: wrap; }
