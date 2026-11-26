@@ -190,7 +190,7 @@ function montarTopo() {
 }
 function montarAbas(rota) {
   const n = VAL ? VAL.erros.length : 0;
-  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ["dia", "Dia a dia"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["mudancas", "Mudanças" + (MUD && MUD.length ? ` <span class="selo-n amarelo">${MUD.length}</span>` : "")], ["ajuda", "Como usar"]] : [];
+  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ["dia", "Dia a dia"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["mudancas", "Mudanças" + (MUD && MUD.length ? ` <span class="selo-n amarelo">${MUD.length}</span>` : "")], ["ajuda", "Como usar"]] : [];
   if (ehAdmin()) abas.unshift(["lojas", "Todas as lojas"]);
   $("#abas").innerHTML = abas.map(([k, t]) => `<a href="#/${k}" class="${k === rota ? "ativa" : ""}">${t}</a>`).join("");
 }
@@ -199,7 +199,7 @@ function render() {
   if (!ESC && rota !== "lojas") rota = ehAdmin() ? "lojas" : "inicio";
   montarAbas(rota);
   const c = $("#conteudo");
-  ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, dia: telaDia, avisos: telaAvisos, mudancas: telaMudancas, ajuda: telaAjuda }[rota] || telaInicio)(c);
+  ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, dia: telaDia, movimento: telaMovimento, avisos: telaAvisos, mudancas: telaMudancas, ajuda: telaAjuda }[rota] || telaInicio)(c);
 }
 
 /* ================= TODAS AS LOJAS (admin) ================= */
@@ -554,6 +554,96 @@ function telaDia(c) {
   $("#prox").onclick = () => { DIA_SEL = Math.min(E.dias.length - 1, i + 1); telaDia(c); };
   $$("[data-p]", c).forEach((el) => (el.onclick = () => abrirCelula(el.dataset.p, i)));
   const ativo = $(".chip-dia.ativo", c); if (ativo) ativo.scrollIntoView({ block: "nearest", inline: "center" });
+}
+
+/* ================= MOVIMENTO E PESSOAS =================
+   Movimento = clientes por hora no caixa (KW). Venda = Prime, por setor. São fontes diferentes e ficam separadas.
+   Pessoas necessárias = o que a escala padrão usou como meta (movimento + venda do setor, na produtividade de hoje). */
+let MOV = { w: 1, setor: "" };
+const VENDA_SETOR = [["Operadora", "Loja toda"], ["Reposição", "Mercearia (reposição)"], ["Açougue", "Açougue"], ["Padaria", "Padaria"], ["Hortifruti", "Hortifruti"], ["Frios", "Frios"], ["Lanchonete", "Lanchonete e cozinha"]];
+const reais = (v) => (v >= 1000 ? "R$ " + (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: v >= 100000 ? 0 : 1 }) + " mil" : "R$ " + Math.round(v).toLocaleString("pt-BR"));
+const num1 = (v) => (v == null ? "" : (Math.round(v * 10) / 10).toLocaleString("pt-BR"));
+/* quantas pessoas do setor estão trabalhando em cada hora, na média dos dias escolhidos */
+function escaladosHora(dias, setor, horas) {
+  const soma = horas.map(() => 0); let n = 0;
+  dias.forEach((i) => {
+    const pr = presenca(E, i, setor); if (!pr) return; n++;
+    horas.forEach((h, k) => { const ks = pr.slots.map((t, j) => (t >= h * 60 && t < h * 60 + 60 ? j : -1)).filter((j) => j >= 0); if (ks.length) soma[k] += ks.reduce((a, j) => a + pr.cont[j], 0) / ks.length; });
+  });
+  return n ? soma.map((v) => v / n) : null;
+}
+function corCob(e, nec) { if (nec == null || e == null) return ""; if (nec >= 0.5 && e < 0.5) return "cob-zero"; if (e < nec - 0.5) return "cob-pouco"; return "cob-ok"; }
+function quadroCob(e, n, tit) { return `<div class="cob ${corCob(e, n)}" title="${esc(tit)}">${Math.round(e ?? 0)}<small>/${Math.max(0, Math.round(n))}</small></div>`; }
+function telaMovimento(c) {
+  const D = P.demanda || {}, horas = P.horas || [];
+  const aberto = (k) => E.loja.horario[k] && !(k === 0 && E.loja.domingo === "fechado");
+  if (!aberto(MOV.w)) MOV.w = 1;
+  const w = MOV.w, ordemW = [1, 2, 3, 4, 5, 6, 0].filter(aberto);
+  const cli = D.clientes && D.clientes[w];
+  const hAb = E.loja.horario[w] ? [minDe(E.loja.horario[w][0]), minDe(E.loja.horario[w][1])] : null;
+  const horasCli = cli ? cli.hora.map((v, h) => ({ h, v })).filter((x) => x.v >= 1 || (hAb && x.h * 60 + 60 > hAb[0] && x.h * 60 < hAb[1])) : [];
+  const maxCli = Math.max(1, ...horasCli.map((x) => x.v));
+  const pico = horasCli.reduce((a, x) => (x.v > a.v ? x : a), { v: 0, h: 0 });
+  const diasW = E.dias.map((x, i) => i).filter((i) => E.dias[i].w === w && !E.dias[i].fechado);
+  const setores = setoresDe(E).filter((s) => D.nec && D.nec[w] && D.nec[w][s]);
+  const nomeW = DIAS_SEM[w], plural = w === 0 || w === 6 ? nomeW + "s" : nomeW + "s-feiras";
+  const linhasNec = setores.map((s) => {
+    const nec = D.nec[w][s], ev = escaladosHora(diasW, s, horas);
+    return `<tr><th class="tc-nome">${esc(s)}</th>${horas.map((h, k) => { const n = nec[k], e = ev ? ev[k] : null; const fora = hAb && (h * 60 + 60 <= hAb[0] || h * 60 >= hAb[1]); return `<td>${fora || n == null ? "" : quadroCob(e, n, `${s} das ${h}h às ${h + 1}h: o movimento pede ${num1(n)} pessoa(s); a escala tem ${num1(e)} em média`)}</td>`; }).join("")}</tr>`;
+  }).join("");
+  const venda = VENDA_SETOR.filter(([k]) => D.venda && D.venda[k]).map(([k, nome]) => ({ nome, v: D.venda[k][w] || 0 }));
+  const maxV = Math.max(1, ...venda.slice(1).map((x) => x.v));
+  const totW = ordemW.map((k) => ({ k, v: D.venda && D.venda.Operadora ? D.venda.Operadora[k] : 0 }));
+  const maxTotW = Math.max(1, ...totW.map((x) => x.v));
+  const cliW = ordemW.map((k) => ({ k, v: D.clientes && D.clientes[k] ? D.clientes[k].dia : 0 }));
+  const maxCliW = Math.max(1, ...cliW.map((x) => x.v));
+  const f = D.fator || {};
+  MOV.setor = setores.includes(MOV.setor) ? MOV.setor : setores.includes("Operadora") ? "Operadora" : setores[0] || "";
+  const colunas = (lista, max, rotulo, txt) => `<div class="barras baixas">${lista.map((x) => `<div class="barra-col" title="${esc(DIAS_SEM[x.k])}: ${esc(txt(x.v))}"><span class="barra-num">${esc(rotulo(x.v))}</span><div class="barra ${x.k === w ? "" : "apagada"}" style="height:${(x.v / max) * 100}%"></div><span class="barra-eixo">${DIAS_CURTO[x.k]}</span></div>`).join("")}</div>`;
+  c.innerHTML = `
+  <section class="cartao"><h1>Movimento e pessoas</h1>
+    <p class="dica">Quanto a loja movimenta em cada hora e quantas pessoas cada setor precisa para dar conta. Escolha o dia da semana:</p>
+    <div class="dias-chips">${ordemW.map((k) => `<button class="chip-dia ${k === 0 ? "dom" : ""} ${k === w ? "ativo" : ""}" data-w="${k}" style="min-width:64px"><b style="font-size:.9rem">${DIAS_CURTO[k]}</b></button>`).join("")}</div>
+  </section>
+
+  <section class="cartao"><h2>Pessoas por hora em cada setor · ${esc(plural)}</h2>
+    <p class="dica">Em cada quadrinho: <b>quantas pessoas a escala tem</b> / <b>quantas o movimento pede</b>, na média das ${esc(plural)} do mês. Já desconta o intervalo e muda na hora quando a escala é mexida.</p>
+    <div class="legenda"><span><i class="cob-ok"></i>dá conta</span><span><i class="cob-pouco"></i>abaixo do que o movimento pede</span><span><i class="cob-zero"></i>ninguém, com movimento pedindo</span></div>
+    ${setores.length ? `<div class="rolagem"><table class="tab-cob"><thead><tr><th></th>${horas.map((h) => `<th>${h}h</th>`).join("")}</tr></thead><tbody>${linhasNec}</tbody></table></div>` : `<p class="dica">Sem dados para este dia.</p>`}
+  </section>
+
+  <section class="cartao"><h2>Movimento no caixa por hora · ${esc(plural)}</h2>
+    ${cli ? `<p class="dica">Clientes por hora no caixa (KW), média de ${cli.dias} ${esc(plural)} normais. Em média <b>${cli.dia.toLocaleString("pt-BR")} clientes por dia</b>; a hora de mais movimento é das <b>${pico.h}h às ${pico.h + 1}h</b>.</p>
+    <div class="barras" role="img" aria-label="Clientes por hora">${horasCli.map((x) => `<div class="barra-col" title="${x.h}h às ${x.h + 1}h: ${Math.round(x.v)} clientes"><span class="barra-num">${x.v >= maxCli * 0.12 ? Math.round(x.v) : ""}</span><div class="barra" style="height:${(x.v / maxCli) * 100}%"></div><span class="barra-eixo">${x.h}h</span></div>`).join("")}</div>
+    <details class="abre" style="margin-top:14px"><summary>Clientes por dia da semana</summary><div>${colunas(cliW, maxCliW, (v) => v.toLocaleString("pt-BR"), (v) => v.toLocaleString("pt-BR") + " clientes")}</div></details>`
+    : `<p class="dica">Sem dados do caixa para esta loja.</p>`}
+  </section>
+
+  <section class="cartao"><h2>Venda por setor · ${esc(plural)}</h2>
+    ${venda.length ? `<p class="dica">Venda média de um dia (Prime)${D.periodo ? `, de ${D.periodo.de.split("-").reverse().join("/")} a ${D.periodo.ate.split("-").reverse().join("/")}` : ""}. A loja toda vende em média <b>${reais(venda[0].v)}</b> numa ${esc(nomeW)}.</p>
+    <div class="hbarras">${venda.slice(1).map((x) => `<div class="hbarra" title="${esc(x.nome)}: ${esc(reais(x.v))}"><span class="hb-nome">${esc(x.nome)}</span><div class="hb-pista"><div class="barra" style="width:${(x.v / maxV) * 100}%"></div></div><span class="hb-val">${reais(x.v)}</span></div>`).join("")}</div>
+    ${f.util1a6 ? `<p class="dica" style="margin-top:12px">Do 1º ao 6º dia útil do mês a venda fica <b>${Math.round((f.util1a6 / (f.resto || 1) - 1) * 100)}% acima</b> do resto do mês. Por isso esses dias pedem mais gente.</p>` : ""}
+    <details class="abre" style="margin-top:10px"><summary>Venda da loja por dia da semana</summary><div>${colunas(totW, maxTotW, (v) => reais(v).replace("R$ ", ""), reais)}</div></details>`
+    : `<p class="dica">Sem dados de venda para esta loja.</p>`}
+  </section>
+
+  ${setores.length && P.necMes ? `<details class="abre" id="movMes"><summary>Mês inteiro, dia por dia, de um setor</summary><div>
+    <p class="dica">Escala / movimento pede, em cada dia e hora do mês (já conta início de mês e feriado).</p>
+    <select id="movSetor" class="busca" style="margin-bottom:10px">${setores.map((s) => `<option ${s === MOV.setor ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
+    <div class="rolagem"><table class="tab-cob"><thead><tr><th></th>${horas.map((h) => `<th>${h}h</th>`).join("")}</tr></thead><tbody>${E.dias.map((x, i) => {
+      const rot = `<th class="tc-nome" style="${x.w === 0 ? "color:var(--laranja)" : ""}">${DIAS_CURTO[x.w]} ${dataTxt(x)}</th>`;
+      if (x.fechado) return `<tr>${rot}<td colspan="${horas.length}" class="mini">loja fechada</td></tr>`;
+      const nec = (P.necMes[MOV.setor] || [])[i] || [], ev = escaladosHora([i], MOV.setor, horas) || [];
+      return `<tr>${rot}${horas.map((h, k) => { const n = nec[k], e = ev[k]; const fora = h * 60 + 60 <= x.abre || h * 60 >= x.fecha; return `<td>${fora || n == null ? "" : quadroCob(e, n, `${dataTxt(x)} das ${h}h às ${h + 1}h: pede ${num1(n)}, a escala tem ${num1(e)}`)}</td>`; }).join("")}</tr>`;
+    }).join("")}</tbody></table></div></div></details>` : ""}
+
+  <details class="abre"><summary>De onde vêm esses números</summary><div>
+    <p><b>Movimento:</b> clientes que passaram no caixa (KW) em cada hora, média dos dias normais (sem feriado e véspera) de 2026.</p>
+    <p><b>Venda por setor:</b> venda de cada departamento no Prime, média por dia da semana no último ano.</p>
+    <p><b>Pessoas que o movimento pede:</b> a produtividade que o setor tem hoje (venda por hora trabalhada), espalhada pelas horas conforme o movimento do caixa, com o mínimo de 1 operadora e 1 açougueiro com a loja aberta. É uma referência para decidir, não uma ordem.</p>
+  </div></details>`;
+  $$("[data-w]", c).forEach((b) => (b.onclick = () => { MOV.w = +b.dataset.w; telaMovimento(c); }));
+  const ms = $("#movSetor", c); if (ms) ms.onchange = () => { MOV.setor = ms.value; telaMovimento(c); const d = $("#movMes", c); if (d) d.open = true; };
 }
 
 /* ================= O QUE ARRUMAR ================= */
