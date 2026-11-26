@@ -121,6 +121,15 @@ function avisosLoja(E) {
         }
       });
     });
+    // regra da empresa (26/11/2026): pelo menos 1 gerente na abertura e 1 no fechamento (dias com a equipe da loja)
+    if (x.fixo) {
+      const pg = presenca(E, i, "Gerência");
+      if (pg && pg.cont.length) {
+        const explica = "Regra da empresa: todo dia tem que ter pelo menos 1 gerente abrindo e 1 fechando a loja. Ajuste a entrada/saída ou a folga dos gerentes.";
+        if (pg.cont[0] === 0) out.push({ nivel: "cobertura", pessoa: null, dia: i, setor: "Gerência", texto: `Sem gerente na abertura (${hm(x.abre)})`, explica });
+        if (pg.cont[pg.cont.length - 1] === 0) out.push({ nivel: "cobertura", pessoa: null, dia: i, setor: "Gerência", texto: `Sem gerente no fechamento (${hm(x.fecha)})`, explica });
+      }
+    }
   });
   return out;
 }

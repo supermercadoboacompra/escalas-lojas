@@ -498,7 +498,7 @@ function telaInicio(c) {
       : `<div class="faixa ${SUJO ? "erro" : ABERTA ? "ok" : "aviso"}" style="margin-top:14px"><div>Aberta agora: <b>${esc(nomeAberta())}</b>${!ABERTA ? (SUJO ? ". Você mexeu e ainda não salvou: toque em Salvar e dê um nome." : ". Ela é fixa: se mexer, salve com um nome e vira uma escala sua.") : ". As mudanças se salvam sozinhas."}</div>${SUJO ? `<span class="espaco"></span><button class="btn primario" id="salvarJa">Salvar com nome</button>` : ""}</div>`}
     <div class="numeros">
       <div class="numero ${v.erros.length ? "vermelho" : "verde"}"><b>${v.erros.length}</b><span>${v.erros.length === 1 ? "coisa para arrumar" : "coisas para arrumar"}</span></div>
-      <div class="numero ${v.cobertura.length ? "vermelho" : "verde"}"><b>${v.cobertura.length}</b><span>horários sem operadora, açougue, padaria ou fiscal</span></div>
+      <div class="numero ${v.cobertura.length ? "vermelho" : "verde"}"><b>${v.cobertura.length}</b><span>horários sem operadora, açougue, padaria ou fiscal, ou sem gerente abrindo/fechando</span></div>
       <div class="numero"><b>${MUD.length}</b><span>mudanças em relação à escala padrão</span></div>
       <div class="numero ${v.avisos.length ? "amarelo" : ""}"><b>${v.avisos.length}</b><span>avisos (pode lançar assim)</span></div>
     </div>
@@ -910,7 +910,7 @@ function telaEquipe(c) {
   const cartoes = setores.map((s) => {
     const ps = ativos_.filter((p) => p.setor === s && casa(p)).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     if (!ps.length) return "";
-    const n = ativos_.filter((p) => p.setor === s).length, pouco = obrig[s] && n < 3, inc = incompleto[s];
+    const n = ativos_.filter((p) => p.setor === s).length, pouco = (obrig[s] || s === "Gerência") && n < 3, inc = incompleto[s];
     const aberto = busca || EQ.abertos.has(s);
     return `<details class="cartao eq-setor" data-setor="${esc(s)}" ${aberto ? "open" : ""}><summary><span class="eq-titulo"><b>${esc(s)}</b> <span class="mini">${n} ${n === 1 ? "pessoa" : "pessoas"}</span></span>
       <span class="eq-selos">${inc ? `<span class="selo-regra falta">faltam ${inc.era - inc.agora}</span>` : ""}${obrig[s] ? `<span class="selo-regra ${pouco ? "falta" : "emp"}">${pouco ? "obrigatório: pouca gente" : "obrigatório"}</span>` : ""}</span></summary>
@@ -1047,7 +1047,7 @@ function telaAvisos(c) {
   </section>
   ${VAL.avisos.length ? `<details class="abre" ${VAL.erros.length ? "" : "open"}><summary>Avisos (${VAL.avisos.length}): pode lançar assim, mas vale olhar</summary><div>${grupo(VAL.avisos)}</div></details>` : ""}
   <section class="cartao"><h2>Setores que não podem ficar vazios</h2>
-    <p class="dica">Regra da empresa: com a loja aberta, sempre tem que ter <b>operadora de caixa, açougue, padaria e fiscal de caixa</b> (já contando os intervalos).</p>
+    <p class="dica">Regra da empresa: com a loja aberta, sempre tem que ter <b>operadora de caixa, açougue, padaria e fiscal de caixa</b> (já contando os intervalos), e todo dia <b>1 gerente na abertura e 1 no fechamento</b>.</p>
     ${cob.length ? `<div class="faixa erro"><b>${cob.length}</b>&nbsp;${cob.length === 1 ? "horário ficou" : "horários ficaram"} sem alguém desses setores.</div><p class="dica">Arrume mudando o intervalo de alguém, a entrada ou a saída, ou a folga. Quando o setor não tem gente suficiente (1 ou 2 pessoas), chame diarista ou fale com o escritório.</p><details class="abre"><summary>Ver dia por dia</summary><div>${grupo(cob)}</div></details>` : `<div class="faixa ok">${ic("check")} Todos os horários têm operadora, açougue, padaria e fiscal.</div>`}
   </section>`;
   $$("[data-p]", c).forEach((b) => (b.onclick = () => (b.dataset.i === "" ? abrirPessoa(b.dataset.p) : abrirCelula(b.dataset.p, +b.dataset.i))));
@@ -1114,6 +1114,7 @@ function telaRegras(c) {
     "Com a loja aberta, <b>sempre</b> tem que ter: <b>operadora de caixa, açougue, padaria e fiscal de caixa</b>.",
     "Vale também na hora do almoço: os intervalos do mesmo setor não podem cair na mesma hora.",
     "O gerente não substitui o fiscal de caixa.",
+    "<b>Gerência:</b> todo dia, pelo menos <b>1 gerente na abertura e 1 no fechamento</b>. Com 5x2, isso pede 3 gerentes na loja.",
     "Se o setor não tem gente para cobrir, chame diarista ou fale com o escritório.",
   ])}
   ${bloco("Folgas", t.emp, [
