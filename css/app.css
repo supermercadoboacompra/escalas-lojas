@@ -264,6 +264,15 @@ details.abre > div { padding-bottom: 14px; }
 @keyframes pisca { 50% { filter: brightness(1.2); } }
 .topo .loja-sel { max-width: 220px; }
 @media (prefers-reduced-motion: reduce) { .btn-topo.pisca { animation: none; } }
+.cartao.regra { margin-bottom: 0; }
+.regra-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.regra-topo h2 { margin: 0 0 6px; }
+.cartao.regra ul { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+.selo-regra { font-size: .72rem; font-weight: 700; padding: 3px 9px; border-radius: 99px; white-space: nowrap; margin-left: 4px; }
+.selo-regra.lei { background: var(--info-fundo, #e6f2fb); color: var(--marinho2); }
+.selo-regra.acordo { background: var(--fer); color: var(--fer-txt); }
+.selo-regra.emp { background: var(--aviso-fundo); color: var(--aviso); }
+.grade2 + details.abre { margin-top: 16px; }
 .impressao { display: none; }
 @media (max-width: 720px) {
   .topo { padding: 8px 16px; gap: 8px; flex-wrap: wrap; }

@@ -169,6 +169,11 @@ function podeSairDoPadrao() {
 function recalcular() { VAL = validarTudo(E, P); MUD = mudancas(E, P); }
 /* A escala que o gerente grava pode ter qualquer coisa. Ao abrir, a estrutura do mês vem sempre do padrão
    (que só o escritório grava) e o resto é forçado para número ou texto, para nada virar código na tela. */
+/* horário combinado: o banco guarda em minutos (1060) ou texto ("17:40"); vira sempre "17:40" */
+function horaCombinada(v) {
+  if (typeof v === "number" && isFinite(v) && v >= 0 && v <= 1440) return hm(v);
+  return /^\d{2}:\d{2}$/.test(String(v || "")) ? String(v) : null;
+}
 function sanear(A, B) {
   const n = (v, d = null) => (v == null || v === "" || !isFinite(+v) ? d : Math.round(+v));
   const t = (v, max = 120) => String(v ?? "").slice(0, max);
@@ -176,7 +181,7 @@ function sanear(A, B) {
   out.pessoas = (Array.isArray(A && A.pessoas) ? A.pessoas : B.pessoas).map((p) => ({
     id: t(p.id, 40), nome: t(p.nome), nomeCompleto: t(p.nomeCompleto), cargo: t(p.cargo), setor: t(p.setor, 40),
     horas: [42, 36, 30, 24, 20].includes(+p.horas) ? +p.horas : 42, turno: p.turno === "M" || p.turno === "T" ? p.turno : null,
-    saidaMax: /^\d{2}:\d{2}$/.test(p.saidaMax || "") ? p.saidaMax : null, entradaMin: /^\d{2}:\d{2}$/.test(p.entradaMin || "") ? p.entradaMin : null,
+    saidaMax: horaCombinada(p.saidaMax), entradaMin: horaCombinada(p.entradaMin),
     entradaAtual: n(p.entradaAtual), semDomingo: !!p.semDomingo, semFeriado: !!p.semFeriado, novo: !!p.novo,
     fora: p.fora ? { motivo: t(p.fora.motivo, 60) } : undefined,
     dias: B.dias.map((x, i) => {
@@ -298,7 +303,7 @@ function montarTopo() {
 }
 function montarAbas(rota) {
   const n = VAL ? VAL.erros.length : 0;
-  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ["dia", "Dia a dia"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["mudancas", "Mudanças" + (MUD && MUD.length ? ` <span class="selo-n amarelo">${MUD.length}</span>` : "")], ["ajuda", "Como usar"]] : [];
+  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ["dia", "Dia a dia"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["mudancas", "Mudanças" + (MUD && MUD.length ? ` <span class="selo-n amarelo">${MUD.length}</span>` : "")], ["regras", "Regras"], ["ajuda", "Como usar"]] : [];
   if (ehAdmin()) abas.unshift(["lojas", "Todas as lojas"]);
   $("#abas").innerHTML = abas.map(([k, t]) => `<a href="#/${k}" class="${k === rota ? "ativa" : ""}">${t}</a>`).join("");
 }
@@ -307,7 +312,7 @@ function render() {
   if (!ESC && rota !== "lojas") rota = ehAdmin() ? "lojas" : "inicio";
   montarAbas(rota);
   const c = $("#conteudo");
-  ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, dia: telaDia, movimento: telaMovimento, avisos: telaAvisos, mudancas: telaMudancas, ajuda: telaAjuda }[rota] || telaInicio)(c);
+  ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, dia: telaDia, movimento: telaMovimento, avisos: telaAvisos, mudancas: telaMudancas, regras: telaRegras, ajuda: telaAjuda }[rota] || telaInicio)(c);
 }
 
 /* ================= TODAS AS LOJAS (admin) ================= */
@@ -872,12 +877,70 @@ function telaAjuda(c) {
       <li><div><b>"O que arrumar"</b> lista o que quebra alguma regra. Tudo vermelho precisa ser arrumado antes de lançar. O amarelo é só aviso.</div></li>
       <li><div><b>"Lançar escala"</b> no Início. A escala fica travada e o escritório vê que a sua loja lançou. Para mudar depois, toque em "Reabrir".</div></li>
     </ol></section>
-  <details class="abre"><summary>Regras que o site confere</summary><div>
-    <p><b>Lei:</b> 42h por semana (8h24 por dia); 30h para quem era 36h; no máximo 10h no dia; 11h de descanso entre um dia e outro; intervalo de 1h a 2h para quem trabalha mais de 6h e 15 min para quem trabalha de 4h a 6h.</p>
-    <p><b>Acordo coletivo:</b> intervalo de 45 min a 2h; loja fechada em 1º de janeiro, Natal e Páscoa; feriado trabalhado dá folga em até 90 dias ou pagamento em dobro.</p>
-    <p><b>Empresa:</b> com a loja aberta, sempre tem que ter operadora de caixa, açougue, padaria e fiscal de caixa; folga fixa no mesmo dia da semana; escala 5x2 (2 folgas por semana, no máximo 5 dias seguidos); pelo menos 2 domingos de folga no mês e nunca 2 domingos seguidos trabalhados; equipe entra no máximo 15 min antes de abrir e sai no máximo 15 min depois de fechar; os combinados de cada pessoa (horário de saída, não trabalhar domingo e outros).</p>
-    <p class="dica">Isto apoia a decisão e não substitui o jurídico, o contador trabalhista ou o sindicato.</p></div></details>
-  <details class="abre"><summary>Tudo fica salvo?</summary><div><p>Sim. Cada mudança é salva sozinha no banco (aparece "Salvo às ..." no topo). Dá para fechar e abrir em outro computador. A escala padrão fica guardada: em "Mudanças" você vê o que mudou e pode desfazer.</p><p>Esqueceu a senha? Fale com o escritório.</p></div></details>`;
+  <p class="dica" style="margin:0 4px 14px">As regras da escala estão na aba <a href="#/regras">Regras</a>.</p>
+  <details class="abre"><summary>Tudo fica salvo?</summary><div><p>A escala padrão é fixa e nunca muda. Quando você mexe nela, toque em <b>Salvar</b> e dê um nome (ex.: "Escala 2"): ela vira uma escala sua. A partir daí, cada mudança se salva sozinha (aparece "Salvo às ..." no topo). Dá para fechar e abrir em outro computador.</p><p>No topo você escolhe qual escala abrir. Em "Mudanças" você vê o que mudou em relação à padrão e pode desfazer.</p><p>Esqueceu a senha? Fale com o escritório.</p></div></details>`;
+}
+
+/* ================= REGRAS (para os gerentes lerem) ================= */
+function telaRegras(c) {
+  const H = E.loja.horario, dom = E.loja.domingo;
+  const horaTxt = (h) => (h ? `${h[0]} às ${h[1]}` : "fechada");
+  const combinados = E.pessoas.filter((p) => !p.fora).map((p) => ({ p, itens: [p.horas !== 42 && `${p.horas}h por semana`, p.entradaMin && `entra a partir das ${p.entradaMin}`, p.saidaMax && `sai até as ${p.saidaMax}`, p.semDomingo && "não trabalha domingo", p.semFeriado && "não trabalha feriado", p.turno && `turno da ${p.turno === "M" ? "manhã" : "tarde"}`].filter(Boolean) })).filter((x) => x.itens.length);
+  const bloco = (titulo, tag, itens) => `<section class="cartao regra"><div class="regra-topo"><h2>${titulo}</h2>${tag}</div><ul>${itens.map((t) => `<li>${t}</li>`).join("")}</ul></section>`;
+  const t = { lei: `<span class="selo-regra lei">Lei</span>`, acordo: `<span class="selo-regra acordo">Acordo coletivo</span>`, emp: `<span class="selo-regra emp">Regra da empresa</span>` };
+  c.innerHTML = `
+  <section class="cartao"><h1>Regras da escala</h1>
+    <p class="dica">O que toda escala da loja precisa seguir. O site confere tudo isto sozinho: <b style="color:var(--erro)">vermelho</b> precisa arrumar antes de lançar, <b style="color:var(--aviso)">amarelo</b> é aviso.</p>
+  </section>
+  <div class="grade2">
+  ${bloco("Setores que nunca ficam vazios", t.emp, [
+    "Com a loja aberta, <b>sempre</b> tem que ter: <b>operadora de caixa, açougue, padaria e fiscal de caixa</b>.",
+    "Vale também na hora do almoço: os intervalos do mesmo setor não podem cair na mesma hora.",
+    "O gerente não substitui o fiscal de caixa.",
+    "Se o setor não tem gente para cobrir, chame diarista ou fale com o escritório.",
+  ])}
+  ${bloco("Folgas", t.emp, [
+    "Escala <b>5x2</b>: 2 folgas por semana.",
+    "<b>1 folga fixa</b> num dia da semana (segunda a sexta), sempre no mesmo dia.",
+    "<b>A outra folga é no domingo.</b> Na semana em que a pessoa trabalha no domingo, essa folga vai para um dia da semana.",
+    "<b>Ninguém folga no sábado.</b>",
+    "No máximo 5 dias seguidos de trabalho.",
+  ])}
+  ${bloco("Domingo", t.emp, [
+    "Pelo menos <b>2 domingos de folga</b> no mês.",
+    "Nunca 2 domingos seguidos trabalhados.",
+    "A equipe de cada setor é dividida em duas turmas que se revezam nos domingos.",
+    dom === "fechado" ? "Nesta loja o domingo é <b>fechado</b>." : dom === "diaristas" ? "Nesta loja o domingo é feito <b>só por diaristas</b>: a equipe folga." : `Nesta loja o domingo abre das ${horaTxt(H[0])}.`,
+  ])}
+  ${bloco("Jornada", t.lei, [
+    "Quem é <b>42h</b> por semana trabalha <b>8h24 por dia</b>, 5 dias.",
+    "Quem era 36h passa a <b>30h</b> (6h por dia). Horista de 24h continua com 24h.",
+    "Passou do limite do dia, vira hora extra. Nunca mais de 10h no dia (CLT art. 59).",
+    "As horas da semana não podem passar do contrato.",
+  ])}
+  ${bloco("Descanso e intervalo", t.lei + t.acordo, [
+    "<b>11h de descanso</b> entre a saída de um dia e a entrada do outro (CLT art. 66).",
+    "Trabalhou mais de 6h: almoço de <b>45 min a 2h</b> (acordo coletivo, cl. 22). <b>Na nossa escala o almoço é de 2h</b>; só fica menor (até 1h) para quem tem horário de saída combinado.",
+    "Trabalhou de 4h a 6h: pausa de <b>15 min</b> (CLT art. 71).",
+  ])}
+  ${bloco("Horário de entrada e saída", t.emp, [
+    "A equipe entra no máximo <b>15 min antes de abrir</b> e sai no máximo <b>15 min depois de fechar</b>.",
+    "Quem é da manhã continua de manhã: mudar mais de 1h o horário de hoje aparece como aviso. Combine antes com a pessoa.",
+    `Horário desta loja: segunda a sexta ${horaTxt(H[1])}; sábado ${horaTxt(H[6])}; domingo ${dom === "fechado" ? "fechada" : horaTxt(H[0])}.`,
+  ])}
+  ${bloco("Feriados", t.acordo, [
+    "1º de janeiro, Natal e Páscoa: loja fechada, ninguém trabalha.",
+    "Feriado com a loja aberta: quem trabalha ganha folga em até 90 dias ou recebe em dobro (acordo coletivo, cl. 20).",
+    ...(E.feriados || []).map((f) => `${f.data.slice(8)}/${f.data.slice(5, 7)}: ${esc(f.nome)} (${f.fechado ? "loja fechada" : "loja abre"}).`),
+  ])}
+  ${bloco("Lançar a escala", t.emp, [
+    "Só dá para lançar quando não tiver nada <b>vermelho</b> em \"O que arrumar\".",
+    "Depois de lançada, a escala fica travada. Para mudar, toque em \"Reabrir\".",
+    "A escala padrão nunca muda. O que você mexer vira uma escala com nome.",
+  ])}
+  </div>
+  ${combinados.length ? `<details class="abre"><summary>Combinados de cada pessoa nesta loja (${combinados.length})</summary><div><p class="dica">Estes combinados também são conferidos pelo site.</p><table class="tab"><tbody>${combinados.map(({ p, itens }) => `<tr><td><b>${esc(p.nome)}</b><br><span class="mini">${esc(p.setor)}</span></td><td>${itens.map(esc).join(" · ")}</td></tr>`).join("")}</tbody></table></div></details>` : ""}
+  <p class="dica" style="margin:6px 4px 20px">Isto apoia a decisão e não substitui o jurídico, o contador trabalhista ou o sindicato. Dúvida sobre uma regra? Fale com o escritório.</p>`;
 }
 
 /* ================= IMPRIMIR E EXCEL ================= */
