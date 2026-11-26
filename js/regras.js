@@ -98,9 +98,11 @@ function presenca(E, i, setor) {
   return { slots, cont };
 }
 
+const SETORES_OBRIGATORIOS = [["Operadora", "operadora de caixa"], ["Açougue", "açougue"], ["Padaria", "padaria"], ["Fiscal", "fiscal de caixa"]];
 function avisosLoja(E) {
-  const out = [], tem = (s) => ativos(E).some((p) => p.setor === s) || (E.diaristas || []).some((d) => d.setor === s);
-  const checar = [["Operadora", "operadora de caixa"], ["Açougue", "açougueiro"], ["Liderança", "gerente ou fiscal"]].filter(([s]) => s === "Liderança" || tem(s));
+  // regra da empresa (26/11/2026): com a loja aberta, nenhum horário sem operadora de caixa, açougue, padaria e fiscal de caixa
+  const out = [];
+  const checar = SETORES_OBRIGATORIOS;
   E.dias.forEach((x, i) => {
     if (x.fechado || x.abre == null) return;
     checar.forEach(([s, nome]) => {
@@ -110,7 +112,7 @@ function avisosLoja(E) {
         if (n === 0 && ini == null) ini = pr.slots[k];
         if ((n > 0 || k === pr.cont.length - 1) && ini != null) {
           const fim = n > 0 ? pr.slots[k] : pr.slots[k] + 30;
-          out.push({ nivel: "cobertura", pessoa: null, dia: i, setor: s, texto: `Sem ${nome} das ${hm(ini)} às ${hm(fim)}`, explica: "Com a loja aberta, este horário fica sem ninguém deste setor. Veja se alguém pode almoçar em outro horário ou entrar/sair em outra hora." });
+          out.push({ nivel: "cobertura", pessoa: null, dia: i, setor: s, texto: `Sem ${nome} das ${hm(ini)} às ${hm(fim)}`, explica: "Regra da empresa: com a loja aberta, sempre tem que ter operadora de caixa, açougue, padaria e fiscal de caixa. Mude o almoço de alguém, a entrada/saída ou a folga; se não tiver gente no setor, chame diarista ou fale com o escritório." });
           ini = null;
         }
       });

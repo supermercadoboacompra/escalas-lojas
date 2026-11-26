@@ -259,6 +259,11 @@ details.abre > div { padding-bottom: 14px; }
 .hb-val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 @media (max-width: 720px) { .hbarra { grid-template-columns: 110px 1fr 80px; font-size: .82rem; } .barra-num { font-size: .6rem; } .barras { gap: 2px; } }
 
+.campo input.hora { font-size: 1.15rem; font-weight: 700; letter-spacing: .04em; font-variant-numeric: tabular-nums; text-align: center; }
+.btn-topo.pisca { background: var(--laranja); border-color: var(--laranja); animation: pisca 1.6s ease-in-out infinite; }
+@keyframes pisca { 50% { filter: brightness(1.2); } }
+.topo .loja-sel { max-width: 220px; }
+@media (prefers-reduced-motion: reduce) { .btn-topo.pisca { animation: none; } }
 .impressao { display: none; }
 @media (max-width: 720px) {
   .topo { padding: 8px 16px; gap: 8px; flex-wrap: wrap; }
