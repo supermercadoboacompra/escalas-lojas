@@ -72,7 +72,6 @@ function validarPessoa(E, p, o) {
       }
       if (p.turno === "M" && c.fim > 1120) add("aviso", i, "Turno da manhã saindo depois de 18h40", "Esta pessoa é do turno da manhã.");
       if (p.turno === "T" && x.we != null && c.fim < x.we) add("aviso", i, "Turno da tarde não fecha a loja", "Esta pessoa é do turno da tarde e costuma fechar a loja.");
-      if (p.entradaAtual != null && Math.abs(c.ini - p.entradaAtual) > 60) add("aviso", i, `Horário bem diferente do de hoje`, `Hoje esta pessoa entra às ${hm(p.entradaAtual)}. Mudança de mais de 1h no horário: combine antes com ela.`);
     } else {
       if (x.w === 6 && x.fixo && !x.feriado && !AUSENCIA.includes(c.t)) add("erro", i, "Folga no sábado", "Regra da empresa: ninguém folga no sábado. Troque a folga para um dia de segunda a sexta.");
       seguidos = 0; fimAnt = null;

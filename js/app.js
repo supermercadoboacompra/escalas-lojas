@@ -1287,7 +1287,6 @@ function telaRegras(c) {
   ])}
   ${bloco("Horário de entrada e saída", t.emp, [
     "A equipe entra no máximo <b>15 min antes de abrir</b> e sai no máximo <b>15 min depois de fechar</b>. Gerência, açougue e produção podem passar disso quando o gerente mudar à mão (fica só aviso).",
-    "Quem é da manhã continua de manhã: mudar mais de 1h o horário de hoje aparece como aviso. Combine antes com a pessoa.",
     `Horário desta loja: segunda a sexta ${horaTxt(H[1])}; sábado ${horaTxt(H[6])}; domingo ${dom === "fechado" ? "fechada" : horaTxt(H[0])}.`,
   ])}
   ${bloco("Feriados", t.acordo, [
