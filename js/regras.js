@@ -97,7 +97,8 @@ function presenca(E, i, setor) {
   const slots = []; for (let t = x.abre; t < x.fecha; t += 30) slots.push(t);
   const cont = slots.map(() => 0);
   const soma = (ini, fim, alm) => slots.forEach((t, k) => { if (t >= ini && t + 30 <= fim + 0 && !(alm && t >= alm[0] && t < alm[1])) cont[k]++; });
-  ativos(E).forEach((p) => { const c = p.dias[i]; if (c.t === "T" && (setor === "*" || p.setor === setor || (setor === "Liderança" && (p.setor === "Gerência" || p.setor === "Fiscal")))) soma(c.ini, c.fim, c.alm); });
+  // "AbreFecha" = gerentes + quem foi marcado como substituto do gerente
+  ativos(E).forEach((p) => { const c = p.dias[i]; if (c.t === "T" && (setor === "*" || p.setor === setor || (setor === "Liderança" && (p.setor === "Gerência" || p.setor === "Fiscal")) || (setor === "AbreFecha" && (p.setor === "Gerência" || p.subGerente)))) soma(c.ini, c.fim, c.alm); });
   (E.diaristas || []).forEach((d) => { if (d.dia === x.d && (setor === "*" || d.setor === setor)) soma(d.ini, d.fim, null); });
   return { slots, cont };
 }
@@ -121,13 +122,13 @@ function avisosLoja(E) {
         }
       });
     });
-    // regra da empresa (26/11/2026): pelo menos 1 gerente na abertura e 1 no fechamento (dias com a equipe da loja)
+    // regra da empresa (26/11/2026, obrigatória): pelo menos 1 gerente (ou substituto marcado) na abertura e 1 no fechamento
     if (x.fixo) {
-      const pg = presenca(E, i, "Gerência");
+      const pg = presenca(E, i, "AbreFecha");
       if (pg && pg.cont.length) {
-        const explica = "Regra da empresa: todo dia tem que ter pelo menos 1 gerente abrindo e 1 fechando a loja. Ajuste a entrada/saída ou a folga dos gerentes.";
-        if (pg.cont[0] === 0) out.push({ nivel: "cobertura", pessoa: null, dia: i, setor: "Gerência", texto: `Sem gerente na abertura (${hm(x.abre)})`, explica });
-        if (pg.cont[pg.cont.length - 1] === 0) out.push({ nivel: "cobertura", pessoa: null, dia: i, setor: "Gerência", texto: `Sem gerente no fechamento (${hm(x.fecha)})`, explica });
+        const explica = "Regra obrigatória: todo dia tem que ter 1 gerente abrindo e 1 fechando a loja. Ajuste a entrada/saída ou a folga dos gerentes. Se a loja não tem gerentes suficientes, marque um substituto (ex.: fiscal ou encarregado) na aba Equipe e coloque essa pessoa para abrir ou fechar.";
+        if (pg.cont[0] === 0) out.push({ nivel: "erro", pessoa: null, dia: i, setor: "Gerência", texto: `Sem gerente na abertura (${hm(x.abre)})`, explica });
+        if (pg.cont[pg.cont.length - 1] === 0) out.push({ nivel: "erro", pessoa: null, dia: i, setor: "Gerência", texto: `Sem gerente no fechamento (${hm(x.fecha)})`, explica });
       }
     }
   });

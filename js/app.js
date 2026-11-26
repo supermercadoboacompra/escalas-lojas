@@ -319,7 +319,7 @@ function sanear(A, B) {
     id: t(p.id, 40), chave: n(p.chave), nome: t(p.nome), nomeCompleto: t(p.nomeCompleto), cargo: t(p.cargo), setor: t(p.setor, 40),
     horas: [42, 36, 30, 24, 20].includes(+p.horas) ? +p.horas : 42, turno: p.turno === "M" || p.turno === "T" ? p.turno : null,
     saidaMax: horaCombinada(p.saidaMax), entradaMin: horaCombinada(p.entradaMin),
-    entradaAtual: n(p.entradaAtual), semDomingo: !!p.semDomingo, semFeriado: !!p.semFeriado, novo: !!p.novo,
+    entradaAtual: n(p.entradaAtual), semDomingo: !!p.semDomingo, semFeriado: !!p.semFeriado, novo: !!p.novo, subGerente: !!p.subGerente,
     fora: p.fora ? { motivo: t(p.fora.motivo, 60) } : undefined,
     dias: B.dias.map((x, i) => {
       const c = (p.dias || [])[i] || {};
@@ -498,7 +498,7 @@ function telaInicio(c) {
       : `<div class="faixa ${SUJO ? "erro" : ABERTA ? "ok" : "aviso"}" style="margin-top:14px"><div>Aberta agora: <b>${esc(nomeAberta())}</b>${!ABERTA ? (SUJO ? ". Você mexeu e ainda não salvou: toque em Salvar e dê um nome." : ". Ela é fixa: se mexer, salve com um nome e vira uma escala sua.") : ". As mudanças se salvam sozinhas."}</div>${SUJO ? `<span class="espaco"></span><button class="btn primario" id="salvarJa">Salvar com nome</button>` : ""}</div>`}
     <div class="numeros">
       <div class="numero ${v.erros.length ? "vermelho" : "verde"}"><b>${v.erros.length}</b><span>${v.erros.length === 1 ? "coisa para arrumar" : "coisas para arrumar"}</span></div>
-      <div class="numero ${v.cobertura.length ? "vermelho" : "verde"}"><b>${v.cobertura.length}</b><span>horários sem operadora, açougue, padaria ou fiscal, ou sem gerente abrindo/fechando</span></div>
+      <div class="numero ${v.cobertura.length ? "vermelho" : "verde"}"><b>${v.cobertura.length}</b><span>horários sem operadora, açougue, padaria ou fiscal</span></div>
       <div class="numero"><b>${MUD.length}</b><span>mudanças em relação à escala padrão</span></div>
       <div class="numero ${v.avisos.length ? "amarelo" : ""}"><b>${v.avisos.length}</b><span>avisos (pode lançar assim)</span></div>
     </div>
@@ -775,6 +775,7 @@ function abrirPessoa(pid) {
       <label class="campo"><span>Setor</span><select id="pSetor" ${travar ? "disabled" : ""}>${setores.map((s) => `<option ${s === p.setor ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
       <label class="campo"><span>Horas por semana</span><select id="pHoras" ${travar ? "disabled" : ""}>${[42, 36, 30, 24, 20].map((h) => `<option value="${h}" ${h === p.horas ? "selected" : ""}>${h}h</option>`).join("")}</select></label>
     </div>
+    ${p.setor !== "Gerência" ? `<label class="marcar"><input type="checkbox" id="pSub" ${p.subGerente ? "checked" : ""} ${travar ? "disabled" : ""}><span><b>Substitui o gerente</b>: pode abrir e fechar a loja quando não tiver gerente (conta para a regra de 1 gerente na abertura e 1 no fechamento).</span></label>` : ""}
     ${restr.length ? `<p class="dica"><b>Combinado:</b> ${restr.map(esc).join(" · ")}</p>` : ""}
     <h3 style="margin-top:14px">Semanas</h3>
     <table class="tab"><tbody>${semanas.map(({ S, min, folgas }) => `<tr><td>${dataTxt(E.dias[S.dias[0]])} a ${dataTxt(E.dias[S.dias[S.dias.length - 1]])}${S.cheia ? "" : ' <span class="mini">(semana incompleta)</span>'}</td><td>${horasTxt(min)}</td><td>${folgas} folga${folgas === 1 ? "" : "s"}</td></tr>`).join("")}</tbody></table>
@@ -787,6 +788,7 @@ function abrirPessoa(pid) {
   $("#fechar", pn).onclick = fecharPainel;
   if (travar) return;
   $("#pSetor", pn).onchange = (e) => { alterar(() => { p.setor = e.target.value; }, "Setor mudado."); abrirPessoa(pid); };
+  const sub = $("#pSub", pn); if (sub) sub.onchange = (e) => { alterar(() => { p.subGerente = e.target.checked; }, e.target.checked ? `${p.nome} agora pode abrir e fechar no lugar do gerente.` : `${p.nome} não substitui mais o gerente.`); abrirPessoa(pid); };
   $("#pHoras", pn).onchange = (e) => { alterar(() => { p.horas = +e.target.value; }, `Agora ${e.target.value}h por semana. Confira os horários.`); abrirPessoa(pid); };
   const bp = $("#pPadrao", pn); if (bp) bp.onclick = () => { alterar(() => { Object.assign(p, clone(o)); }, "Pessoa voltou ao padrão."); abrirPessoa(pid); };
   const bv = $("#pVolta", pn); if (bv) bv.onclick = () => { alterar(() => { delete p.fora; }, "Voltou para a escala."); abrirPessoa(pid); };
@@ -907,6 +909,7 @@ function telaEquipe(c) {
   const porSetorNum = setores.map((s) => ({ s, n: ativos_.filter((p) => p.setor === s).length }));
   const maxN = Math.max(1, ...porSetorNum.map((x) => x.n));
   const incompleto = Object.fromEntries(setoresIncompletos().map((x) => [x.setor, x]));
+  const subs = ativos_.filter((p) => p.subGerente);
   const cartoes = setores.map((s) => {
     const ps = ativos_.filter((p) => p.setor === s && casa(p)).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     if (!ps.length) return "";
@@ -915,8 +918,8 @@ function telaEquipe(c) {
     return `<details class="cartao eq-setor" data-setor="${esc(s)}" ${aberto ? "open" : ""}><summary><span class="eq-titulo"><b>${esc(s)}</b> <span class="mini">${n} ${n === 1 ? "pessoa" : "pessoas"}</span></span>
       <span class="eq-selos">${inc ? `<span class="selo-regra falta">faltam ${inc.era - inc.agora}</span>` : ""}${obrig[s] ? `<span class="selo-regra ${pouco ? "falta" : "emp"}">${pouco ? "obrigatório: pouca gente" : "obrigatório"}</span>` : ""}</span></summary>
       ${inc ? `<p class="dica" style="color:var(--erro)">Setor incompleto: eram ${inc.era} pessoas na escala padrão, agora ${inc.agora}. Alguém saiu ou está afastado o mês todo e ninguém entrou no lugar.</p>` : ""}
-      ${pouco ? `<p class="dica" style="color:var(--erro)">Setor obrigatório com ${n} ${n === 1 ? "pessoa" : "pessoas"}: com folgas e almoço não dá para cobrir todos os horários. O ideal é pelo menos 3.</p>` : ""}
-      <div class="eq-lista">${ps.map((p) => { const r = resumoPessoa(p); const comb = [p.entradaMin && `entra a partir das ${p.entradaMin}`, p.saidaMax && `sai até as ${p.saidaMax}`, p.semDomingo && p.horas !== 30 && "não trabalha domingo", p.semFeriado && "não trabalha feriado"].filter(Boolean);
+      ${pouco ? (s === "Gerência" ? `<p class="dica" style="color:var(--erro)">Só ${n} ${n === 1 ? "gerente" : "gerentes"}: com 5x2 não dá para ter gerente abrindo e fechando todo dia (precisa de 3). Toque em alguém de confiança (fiscal, encarregado) e marque <b>"Substitui o gerente"</b>${subs.length ? `. Substitutos hoje: ${subs.map((q) => esc(q.nome)).join(", ")}` : ""}.</p>` : `<p class="dica" style="color:var(--erro)">Setor obrigatório com ${n} ${n === 1 ? "pessoa" : "pessoas"}: com folgas e almoço não dá para cobrir todos os horários. O ideal é pelo menos 3.</p>`) : ""}
+      <div class="eq-lista">${ps.map((p) => { const r = resumoPessoa(p); const comb = [p.subGerente && "substitui o gerente", p.entradaMin && `entra a partir das ${p.entradaMin}`, p.saidaMax && `sai até as ${p.saidaMax}`, p.semDomingo && p.horas !== 30 && "não trabalha domingo", p.semFeriado && "não trabalha feriado"].filter(Boolean);
         return `<button class="eq-pessoa" data-p="${esc(p.id)}"><span class="eq-avatar ${r.turno === "manhã" ? "m" : "t"}">${esc(p.nome.split(" ").map((x) => x[0]).slice(0, 2).join(""))}</span>
           <span class="eq-info"><b>${esc(p.nome)}</b><small>${esc(tituloBonito(p.cargo || ""))}${p.novo ? " · incluída" : ""}</small>
           <span class="eq-tags"><i>${p.horas}h</i><i>${esc(r.horario)}</i><i>folga fixa: ${esc(r.folgaFixa)}</i><i>domingo: ${esc(r.domingo)}</i>${comb.map((t) => `<i class="comb">${esc(t)}</i>`).join("")}</span></span></button>`; }).join("")}</div></details>`;
@@ -1047,7 +1050,7 @@ function telaAvisos(c) {
   </section>
   ${VAL.avisos.length ? `<details class="abre" ${VAL.erros.length ? "" : "open"}><summary>Avisos (${VAL.avisos.length}): pode lançar assim, mas vale olhar</summary><div>${grupo(VAL.avisos)}</div></details>` : ""}
   <section class="cartao"><h2>Setores que não podem ficar vazios</h2>
-    <p class="dica">Regra da empresa: com a loja aberta, sempre tem que ter <b>operadora de caixa, açougue, padaria e fiscal de caixa</b> (já contando os intervalos), e todo dia <b>1 gerente na abertura e 1 no fechamento</b>.</p>
+    <p class="dica">Regra da empresa: com a loja aberta, sempre tem que ter <b>operadora de caixa, açougue, padaria e fiscal de caixa</b> (já contando os intervalos).</p>
     ${cob.length ? `<div class="faixa erro"><b>${cob.length}</b>&nbsp;${cob.length === 1 ? "horário ficou" : "horários ficaram"} sem alguém desses setores.</div><p class="dica">Arrume mudando o intervalo de alguém, a entrada ou a saída, ou a folga. Quando o setor não tem gente suficiente (1 ou 2 pessoas), chame diarista ou fale com o escritório.</p><details class="abre"><summary>Ver dia por dia</summary><div>${grupo(cob)}</div></details>` : `<div class="faixa ok">${ic("check")} Todos os horários têm operadora, açougue, padaria e fiscal.</div>`}
   </section>`;
   $$("[data-p]", c).forEach((b) => (b.onclick = () => (b.dataset.i === "" ? abrirPessoa(b.dataset.p) : abrirCelula(b.dataset.p, +b.dataset.i))));
@@ -1114,7 +1117,7 @@ function telaRegras(c) {
     "Com a loja aberta, <b>sempre</b> tem que ter: <b>operadora de caixa, açougue, padaria e fiscal de caixa</b>.",
     "Vale também na hora do almoço: os intervalos do mesmo setor não podem cair na mesma hora.",
     "O gerente não substitui o fiscal de caixa.",
-    "<b>Gerência:</b> todo dia, pelo menos <b>1 gerente na abertura e 1 no fechamento</b>. Com 5x2, isso pede 3 gerentes na loja.",
+    "<b>Gerência (obrigatório, trava o lançamento):</b> todo dia, pelo menos <b>1 gerente na abertura e 1 no fechamento</b>. Com 5x2 isso pede 3 gerentes; se a loja tem menos, marque um <b>substituto do gerente</b> na aba Equipe (ex.: fiscal ou encarregado) e coloque essa pessoa para abrir ou fechar.",
     "Se o setor não tem gente para cobrir, chame diarista ou fale com o escritório.",
   ])}
   ${bloco("Folgas", t.emp, [
