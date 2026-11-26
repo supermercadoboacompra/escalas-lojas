@@ -5,6 +5,7 @@
   --acento: #003462; --acento-txt: #ffffff; --acento-fundo: #e7eef7;
   --manha: #dcebfa; --manha-txt: #0b3a66; --tarde: #fff0d6; --tarde-txt: #6b4100; --folga: #eceef1; --folga-txt: #7a828d;
   --dom: #fde3d3; --dom-txt: #9a3d0c; --fer: #efe2f5; --fer-txt: #6a2b80; --fechado: repeating-linear-gradient(135deg, #eceef1 0 4px, #f6f7f9 4px 8px);
+  --afa: #fde8e8; --afa-txt: #9b1c1c; --vac: #e3f5ea; --vac-txt: #17663a;
   --erro: #c62828; --erro-fundo: #fdecec; --aviso: #b26a00; --aviso-fundo: #fff5e0; --ok: #1d7a46; --ok-fundo: #e6f4ec;
   --sombra: 0 1px 0 rgba(0, 52, 98, .04), 0 10px 28px -16px rgba(0, 52, 98, .28);
   --titulo: "Bricolage Grotesque", "Public Sans", system-ui, sans-serif;
@@ -15,7 +16,7 @@
     --fundo: #07111f; --sup: #0f1f33; --sup2: #142840; --borda: #22385a; --texto: #eef2f7; --texto2: #a3b3c9; --texto3: #6f83a0;
     --acento: #f26522; --acento-txt: #111318; --acento-fundo: #2a1a12;
     --manha: #143657; --manha-txt: #cfe4fb; --tarde: #4a3410; --tarde-txt: #ffe2ad; --folga: #1a2a40; --folga-txt: #8597b0;
-    --dom: #4a2412; --dom-txt: #ffc9a8; --fer: #3a2148; --fer-txt: #e6c6f3; --fechado: repeating-linear-gradient(135deg, #142840 0 4px, #0f1f33 4px 8px);
+    --dom: #4a2412; --dom-txt: #ffc9a8; --fer: #3a2148; --fer-txt: #e6c6f3; --fechado: repeating-linear-gradient(135deg, #142840 0 4px, #0f1f33 4px 8px); --afa: #4a1818; --afa-txt: #ffc4c4; --vac: #123a24; --vac-txt: #b6f0cc;
     --erro: #ff7b7b; --erro-fundo: #3a1616; --aviso: #ffc266; --aviso-fundo: #3a2a0e; --ok: #6fd69a; --ok-fundo: #11301f;
     --sombra: 0 10px 28px -16px rgba(0, 0, 0, .7); color-scheme: dark;
   }
@@ -24,7 +25,7 @@
   --fundo: #07111f; --sup: #0f1f33; --sup2: #142840; --borda: #22385a; --texto: #eef2f7; --texto2: #a3b3c9; --texto3: #6f83a0;
   --acento: #f26522; --acento-txt: #111318; --acento-fundo: #2a1a12;
   --manha: #143657; --manha-txt: #cfe4fb; --tarde: #4a3410; --tarde-txt: #ffe2ad; --folga: #1a2a40; --folga-txt: #8597b0;
-  --dom: #4a2412; --dom-txt: #ffc9a8; --fer: #3a2148; --fer-txt: #e6c6f3; --fechado: repeating-linear-gradient(135deg, #142840 0 4px, #0f1f33 4px 8px);
+  --dom: #4a2412; --dom-txt: #ffc9a8; --fer: #3a2148; --fer-txt: #e6c6f3; --fechado: repeating-linear-gradient(135deg, #142840 0 4px, #0f1f33 4px 8px); --afa: #4a1818; --afa-txt: #ffc4c4; --vac: #123a24; --vac-txt: #b6f0cc;
   --erro: #ff7b7b; --erro-fundo: #3a1616; --aviso: #ffc266; --aviso-fundo: #3a2a0e; --ok: #6fd69a; --ok-fundo: #11301f;
   --sombra: 0 10px 28px -16px rgba(0, 0, 0, .7); color-scheme: dark;
 }
@@ -298,6 +299,21 @@ details.abre > div { padding-bottom: 14px; }
 .cob-faixa b { font-family: var(--titulo); font-size: 1.15rem; }
 .cob-dif { font-size: .78rem; font-weight: 700; } .cob-dif.sobe { color: var(--ok); } .cob-dif.desce { color: var(--erro); }
 #eqBusca { flex: 1; min-width: 240px; }
+.cel.afa { background: var(--afa); color: var(--afa-txt); font-weight: 700; font-size: 9.5px; }
+.cel.vac { background: var(--vac); color: var(--vac-txt); font-weight: 700; font-size: 9.5px; }
+.escolha { grid-template-columns: repeat(4, 1fr); } .escolha button { padding: 12px 4px; font-size: .92rem; }
+@media (max-width: 420px) { .escolha { grid-template-columns: 1fr 1fr; } }
+details.eq-setor { padding: 0; }
+details.eq-setor > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 16px 18px; flex-wrap: wrap; }
+details.eq-setor > summary::-webkit-details-marker { display: none; }
+details.eq-setor > summary .eq-titulo { display: flex; align-items: center; gap: 8px; font-size: 1.05rem; }
+details.eq-setor > summary .eq-titulo::before { content: ""; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s; margin-right: 4px; }
+details.eq-setor[open] > summary .eq-titulo::before { transform: rotate(45deg); }
+details.eq-setor > summary:hover { background: var(--sup2); border-radius: 16px; }
+details.eq-setor > :not(summary) { margin: 0 18px; } details.eq-setor .eq-lista { margin-bottom: 16px; }
+.eq-selos { display: flex; gap: 4px; flex-wrap: wrap; }
+.eq-grade { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+.alerta-quadro .ic, .faixa .ic { flex: none; }
 .impressao { display: none; }
 @media (max-width: 720px) {
   .topo { padding: 8px 16px; gap: 8px; flex-wrap: wrap; }

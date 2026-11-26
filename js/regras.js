@@ -11,6 +11,8 @@ const horasTxt = (m) => { m = Math.round(m); const h = Math.floor(m / 60), r = m
 const dataTxt = (x) => String(x.d).padStart(2, "0") + "/" + x.iso.slice(5, 7);
 const trabDe = (c) => (c && c.t === "T" ? c.fim - c.ini - (c.alm ? c.alm[1] - c.alm[0] : 0) : 0);
 const limiteDia = (p) => Math.round((p.horas * 60) / 5);
+/* dias em que a pessoa não está por motivo que não é folga: X = feriado com loja fechada, A = afastado (atestado, INSS, saiu), V = férias */
+const AUSENCIA = ["X", "A", "V"];
 const ehFolga = (c) => c && (c.t === "F" || c.t === "D");
 const ativos = (E) => E.pessoas.filter((p) => !p.fora);
 
@@ -68,7 +70,7 @@ function validarPessoa(E, p, o) {
       if (p.turno === "T" && x.we != null && c.fim < x.we) add("aviso", i, "Turno da tarde não fecha a loja", "Esta pessoa é do turno da tarde e costuma fechar a loja.");
       if (p.entradaAtual != null && Math.abs(c.ini - p.entradaAtual) > 60) add("aviso", i, `Horário bem diferente do de hoje`, `Hoje esta pessoa entra às ${hm(p.entradaAtual)}. Mudança de mais de 1h no horário: combine antes com ela.`);
     } else {
-      if (x.w === 6 && x.fixo && !x.feriado && c.t !== "X") add("erro", i, "Folga no sábado", "Regra da empresa: ninguém folga no sábado. Troque a folga para um dia de segunda a sexta.");
+      if (x.w === 6 && x.fixo && !x.feriado && !AUSENCIA.includes(c.t)) add("erro", i, "Folga no sábado", "Regra da empresa: ninguém folga no sábado. Troque a folga para um dia de segunda a sexta.");
       seguidos = 0; fimAnt = null;
       if (x.w === 0) { domFolga++; domAntTrab = false; }
     }
@@ -78,7 +80,7 @@ function validarPessoa(E, p, o) {
   (E.semanas || []).forEach((S) => {
     if (!S.cheia) return;
     const folgas = S.dias.filter((i) => ehFolga(p.dias[i])).length;
-    const fer = S.dias.filter((i) => p.dias[i].t === "X").length;
+    const fer = S.dias.filter((i) => AUSENCIA.includes(p.dias[i].t)).length; // feriado fechado, afastamento e férias não contam como folga
     const min = S.dias.reduce((a, i) => a + trabDe(p.dias[i]), 0);
     const ini = E.dias[S.dias[0]], fim = E.dias[S.dias[S.dias.length - 1]];
     const sem = `semana de ${dataTxt(ini)} a ${dataTxt(fim)}`;
@@ -160,7 +162,7 @@ function validarTudo(E, P) {
 
 /* diferenças entre a escala do gerente e a padrão */
 const mesmoDia = (a, b) => a.t === b.t && (a.t !== "T" || (a.ini === b.ini && a.fim === b.fim && JSON.stringify(a.alm || null) === JSON.stringify(b.alm || null)));
-const diaTxt = (c) => (c.t === "T" ? `${hm(c.ini)} às ${hm(c.fim)}` : c.t === "D" ? "folga (domingo)" : c.t === "X" ? "feriado" : "folga");
+const diaTxt = (c) => (c.t === "T" ? `${hm(c.ini)} às ${hm(c.fim)}` : c.t === "D" ? "folga (domingo)" : c.t === "X" ? "feriado" : c.t === "A" ? "afastado" : c.t === "V" ? "férias" : "folga");
 function mudancas(E, P) {
   const out = [], pad = Object.fromEntries(P.pessoas.map((p) => [p.id, p]));
   E.pessoas.forEach((p) => {
