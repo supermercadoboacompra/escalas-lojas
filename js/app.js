@@ -907,7 +907,8 @@ function telaRegras(c) {
     "No máximo 5 dias seguidos de trabalho.",
   ])}
   ${bloco("Domingo", t.emp, [
-    "Pelo menos <b>2 domingos de folga</b> no mês.",
+    "Quem é <b>30h</b> (era 36h) <b>folga todo domingo</b>.",
+    "Os demais: pelo menos <b>2 domingos de folga</b> no mês.",
     "Nunca 2 domingos seguidos trabalhados.",
     "A equipe de cada setor é dividida em duas turmas que se revezam nos domingos.",
     dom === "fechado" ? "Nesta loja o domingo é <b>fechado</b>." : dom === "diaristas" ? "Nesta loja o domingo é feito <b>só por diaristas</b>: a equipe folga." : `Nesta loja o domingo abre das ${horaTxt(H[0])}.`,

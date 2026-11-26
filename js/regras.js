@@ -55,7 +55,8 @@ function validarPessoa(E, p, o) {
       if (x.w === 0) {
         if (domAntTrab) add("erro", i, "Dois domingos seguidos trabalhados", "Regra da empresa: não trabalhar dois domingos seguidos.");
         domAntTrab = true;
-        if (p.semDomingo) add("erro", i, "Esta pessoa não trabalha domingo", "Combinado com a pessoa: não trabalha aos domingos.");
+        if (p.horas === 30) add("erro", i, "Quem é 30h folga todo domingo", "Regra da empresa: quem era 36h e passou a 30h folga todo domingo. A folga da semana fica num dia de segunda a sexta.");
+        else if (p.semDomingo) add("erro", i, "Esta pessoa não trabalha domingo", "Combinado com a pessoa: não trabalha aos domingos.");
       }
       if (x.feriado && p.semFeriado) add("erro", i, "Esta pessoa não trabalha feriado", "Combinado com a pessoa: não trabalha em feriado.");
       if (entradaMin != null && c.ini < entradaMin) add("erro", i, `Entra antes das ${hm(entradaMin)}`, `Combinado com a pessoa: entra a partir das ${hm(entradaMin)}.`);
