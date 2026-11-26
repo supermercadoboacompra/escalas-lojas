@@ -13,6 +13,8 @@ const trabDe = (c) => (c && c.t === "T" ? c.fim - c.ini - (c.alm ? c.alm[1] - c.
 const limiteDia = (p) => Math.round((p.horas * 60) / 5);
 /* dias em que a pessoa não está por motivo que não é folga: X = feriado com loja fechada, A = afastado (atestado, INSS, saiu), V = férias, N = ainda não entrou (vaga antes do dia de início) */
 const AUSENCIA = ["X", "A", "V", "N"];
+/* setores que podem entrar antes da abertura ou sair depois do fechamento quando o gerente mexe (vira aviso, não trava) */
+const SETORES_HORARIO_LIVRE = ["Gerência", "Açougue", "Produção"];
 const ehFolga = (c) => c && (c.t === "F" || c.t === "D");
 const ativos = (E) => E.pessoas.filter((p) => !p.fora);
 
@@ -41,8 +43,10 @@ function validarPessoa(E, p, o) {
       else if (!x.fixo) add("erro", i, "Domingo só com diaristas", "Nesta loja o domingo é feito só por diaristas. A equipe fica de folga.");
       if (!x.fechado && x.ws != null) {
         const entraCedo = Math.min(x.ws, p.entradaAtual ?? 9999);
-        if (c.ini < entraCedo) add("erro", i, `Entra antes das ${hm(entraCedo)}`, `A loja abre às ${hm(x.abre)}. A equipe entra no máximo 15 min antes (${hm(x.ws)}).`);
-        if (c.fim > x.we) add("erro", i, `Sai depois das ${hm(x.we)}`, `A loja fecha às ${hm(x.fecha)}. A equipe sai no máximo 15 min depois (${hm(x.we)}).`);
+        // gerência, açougue e produção às vezes entram antes ou saem depois: o gerente pode mudar à mão (fica só o aviso)
+        const livre = SETORES_HORARIO_LIVRE.includes(p.setor), nv = livre ? "aviso" : "erro", ex = livre ? " Gerência, açougue e produção podem passar disso quando precisar." : "";
+        if (c.ini < entraCedo) add(nv, i, `Entra antes das ${hm(entraCedo)}`, `A loja abre às ${hm(x.abre)}. A equipe entra no máximo 15 min antes (${hm(x.ws)}).${ex}`);
+        if (c.fim > x.we) add(nv, i, `Sai depois das ${hm(x.we)}`, `A loja fecha às ${hm(x.fecha)}. A equipe sai no máximo 15 min depois (${hm(x.we)}).${ex}`);
       }
       if (trab > 600) add("erro", i, `Trabalha ${horasTxt(trab)} no dia`, "O máximo por lei é 10h no dia (8h + 2h extras). CLT art. 59.");
       else if (trab > lim) add("erro", i, `Passou de ${horasTxt(lim)} no dia`, `Quem é ${p.horas}h por semana trabalha até ${horasTxt(lim)} por dia. Acima disso vira hora extra.`);

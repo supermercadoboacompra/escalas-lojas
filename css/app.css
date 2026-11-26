@@ -302,6 +302,13 @@ details.abre > div { padding-bottom: 14px; }
 .cel.afa { background: var(--afa); color: var(--afa-txt); font-weight: 700; font-size: 9.5px; }
 .cel.vac { background: var(--vac); color: var(--vac-txt); font-weight: 700; font-size: 9.5px; }
 .escolha { grid-template-columns: repeat(4, 1fr); } .escolha button { padding: 12px 4px; font-size: .92rem; }
+/* aba Escala 6x1 (referência) */
+.seis-grade { display: grid; gap: 12px; margin-bottom: 16px; }
+.tabela-rolagem { overflow-x: auto; margin-top: 10px; }
+.tab.seis { width: 100%; min-width: 620px; }
+.tab.seis th { text-align: left; font-size: .78rem; color: var(--texto-fraco, #6b7686); font-weight: 600; padding: 6px 8px; }
+.tab.seis td { padding: 8px; vertical-align: top; }
+.tab.seis .cinco { border-left: 2px solid var(--laranja); padding-left: 12px; }
 /* vaga (ainda vai contratar) */
 #nTipo { grid-template-columns: 1fr 1fr; margin-bottom: 4px; }
 .selo-vaga { display: inline-block; font-size: .62rem; font-weight: 800; letter-spacing: .04em; padding: 1px 6px; margin-right: 6px; border-radius: 99px; border: 1.5px dashed var(--laranja); color: var(--laranja); vertical-align: 1px; }

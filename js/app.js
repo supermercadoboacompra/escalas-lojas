@@ -458,7 +458,7 @@ function montarTopo() {
 }
 function montarAbas(rota) {
   const n = VAL ? VAL.erros.length : 0;
-  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ["dia", "Dia a dia"], ["equipe", "Equipe"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["mudancas", "Mudanças" + (MUD && MUD.length ? ` <span class="selo-n amarelo">${MUD.length}</span>` : "")], ["regras", "Regras"], ["ajuda", "Como usar"]] : [];
+  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ...(tem6x1() ? [["6x1", "Escala 6x1"]] : []), ["dia", "Dia a dia"], ["equipe", "Equipe"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["mudancas", "Mudanças" + (MUD && MUD.length ? ` <span class="selo-n amarelo">${MUD.length}</span>` : "")], ["regras", "Regras"], ["ajuda", "Como usar"]] : [];
   if (ehAdmin()) abas.unshift(["lojas", "Todas as lojas"]);
   $("#abas").innerHTML = abas.map(([k, t]) => `<a href="#/${k}" class="${k === rota ? "ativa" : ""}">${t}</a>`).join("");
 }
@@ -467,7 +467,7 @@ function render() {
   if (!ESC && rota !== "lojas") rota = ehAdmin() ? "lojas" : "inicio";
   montarAbas(rota);
   const c = $("#conteudo");
-  ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, dia: telaDia, equipe: telaEquipe, movimento: telaMovimento, avisos: telaAvisos, mudancas: telaMudancas, regras: telaRegras, ajuda: telaAjuda }[rota] || telaInicio)(c);
+  ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, "6x1": telaSeisUm, dia: telaDia, equipe: telaEquipe, movimento: telaMovimento, avisos: telaAvisos, mudancas: telaMudancas, regras: telaRegras, ajuda: telaAjuda }[rota] || telaInicio)(c);
 }
 
 /* ================= TODAS AS LOJAS (admin) ================= */
@@ -546,7 +546,7 @@ function telaInicio(c) {
   </section>
   ${fer.length ? `<details class="abre"><summary>Feriados do mês</summary><div>${fer.map((f) => `<p><b>${f.data.slice(8)}/${f.data.slice(5, 7)}</b> · ${esc(f.nome)}: a loja abre. Quem trabalha ganha folga em até 90 dias ou recebe em dobro (acordo coletivo, cl. 20).</p>`).join("")}</div></details>` : ""}
   ${(E.fora || []).length ? `<details class="abre"><summary>Quem não entra na escala (${E.fora.length})</summary><div><p class="dica">Afastados, aprendizes, limpeza, depósito, administrativo e outros que ficam fora da escala 5x2.</p><table class="tab"><tbody>${E.fora.map((f) => `<tr><td>${esc(f.nome)}</td><td class="mini">${esc(f.cargo || "")}</td><td class="mini">${esc(f.motivo || "")}</td></tr>`).join("")}</tbody></table></div></details>` : ""}
-  <details class="abre"><summary>Horário da loja</summary><div>${E.loja.horario.map((h, w) => `<p>${DIAS_SEM[w]}: ${h ? `${esc(h[0])} às ${esc(h[1])}` : "fechada"}${w === 0 && E.loja.domingo === "diaristas" ? " (só diaristas)" : ""}</p>`).join("")}<p class="dica">A equipe pode entrar 15 min antes de abrir e sair 15 min depois de fechar.</p></div></details>`;
+  <details class="abre"><summary>Horário da loja</summary><div>${E.loja.horario.map((h, w) => `<p>${DIAS_SEM[w]}: ${h ? `${esc(h[0])} às ${esc(h[1])}` : "fechada"}${w === 0 && E.loja.domingo === "diaristas" ? " (só diaristas)" : ""}</p>`).join("")}<p class="dica">A equipe pode entrar 15 min antes de abrir e sair 15 min depois de fechar. Gerência, açougue e produção podem passar disso (fica só aviso).</p></div></details>`;
   ligarFaixaAlertas(c);
   const bl = $("#lancar"); if (bl) bl.onclick = confirmarLancar;
   const br = $("#reabrir"); if (br) br.onclick = confirmarReabrir;
@@ -985,6 +985,42 @@ function telaDia(c) {
 /* ================= EQUIPE (funcionários por setor) ================= */
 let EQ = { busca: "", fora: false, abertos: new Set() };
 /* resumo da semana de uma pessoa, tirado da escala aberta */
+/* ================= ESCALA 6x1 ATUAL (referência, só leitura) ================= */
+const tem6x1 = () => !!(P && P.escala6x1 && Array.isArray(P.escala6x1.pessoas) && P.escala6x1.pessoas.length);
+const SEIS = { abertos: new Set() };
+function telaSeisUm(c) {
+  if (!tem6x1()) { location.hash = "#/escala"; return; }
+  const S = P.escala6x1, num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  const hr = (v) => (num(v) == null ? "-" : hm(v));
+  const lista = S.pessoas.map((q) => {
+    const ini = num(q.ini), fim = num(q.fim), alm = Array.isArray(q.alm) ? q.alm.map(num) : [null, null];
+    const dia = ini != null && fim != null ? fim - ini - (alm[0] != null && alm[1] != null ? alm[1] - alm[0] : 0) : null;
+    const p = q.id ? E.pessoas.find((x) => x.id === String(q.id)) : null;
+    return { q, ini, fim, alm, dia, p, r: p && !p.fora ? resumoPessoa(p) : null };
+  });
+  const setores = [...new Set(lista.map((x) => String(x.q.setor || "")))];
+  const n44 = lista.filter((x) => !x.q.vaga && +x.q.horas === 44).length, n36 = lista.filter((x) => !x.q.vaga && +x.q.horas === 36).length, nv = lista.filter((x) => x.q.vaga).length;
+  const cartoes = setores.map((s) => {
+    const ps = lista.filter((x) => String(x.q.setor || "") === s);
+    return `<details class="cartao eq-setor" data-setor="${esc(s)}" ${SEIS.abertos.has(s) ? "open" : ""}><summary><span class="eq-titulo"><b>${esc(s)}</b> <span class="mini">${ps.length} ${ps.length === 1 ? "pessoa" : "pessoas"}</span></span></summary>
+      <div class="tabela-rolagem"><table class="tab seis"><thead><tr><th>Pessoa</th><th>Folga (6x1)</th><th>Horário hoje (6x1)</th><th>Por dia</th><th class="cinco">Na 5x2 sugerida</th></tr></thead><tbody>
+      ${ps.map(({ q, ini, fim, alm, dia, p, r }) => `<tr class="${p ? "clica" : ""}" ${p ? `data-p="${esc(p.id)}"` : ""}>
+        <td><b>${q.vaga ? '<span class="selo-vaga">VAGA</span>' : ""}${esc(String(q.nome || ""))}</b><br><span class="mini">${+q.horas === 36 ? "36h" : "44h"}${q.enc ? " · encarregado(a)" : ""}</span></td>
+        <td>${esc(String(q.folga || "-"))}</td>
+        <td>${hr(ini)} às ${hr(fim)}${alm[0] != null ? `<br><span class="mini">intervalo ${hr(alm[0])} às ${hr(alm[1])}</span>` : ""}</td>
+        <td>${dia != null ? horasTxt(dia) : "-"}</td>
+        <td class="cinco">${p && p.fora ? `<span class="mini">fora da escala</span>` : r ? `${p.horas}h · folga fixa ${esc(r.folgaFixa.toLowerCase())}<br><span class="mini">${esc(r.horario)} · domingo: ${esc(r.domingo)}</span>` : `<span class="mini">-</span>`}</td></tr>`).join("")}
+      </tbody></table></div></details>`;
+  }).join("");
+  c.innerHTML = `<section class="cartao"><h1>Escala 6x1 atual</h1>
+    <p class="dica">Como a loja trabalha hoje (6x1, 44h e 36h), da planilha ${esc(String(S.fonte || "do escritório"))}${S.em ? ", de " + esc(dataBr(String(S.em))) : ""}. Serve de comparação: a coluna da direita mostra a mesma pessoa na escala 5x2 sugerida (42h e 30h). Toque na pessoa para abrir a ficha dela.</p>
+    <div class="numeros"><div class="numero"><b>${n44}</b><span>de 44h (passam a 42h)</span></div><div class="numero"><b>${n36}</b><span>de 36h (passam a 30h, folga todo domingo)</span></div>${nv ? `<div class="numero"><b>${nv}</b><span>${nv === 1 ? "vaga" : "vagas"} a contratar</span></div>` : ""}</div>
+    ${Array.isArray(S.setoresFora) && S.setoresFora.length ? `<p class="dica" style="margin-bottom:0">Fora da escala: ${S.setoresFora.map((x) => esc(String(x))).join(", ")}.</p>` : ""}
+  </section>
+  <div class="seis-grade">${cartoes}</div>`;
+  $$("details.eq-setor", c).forEach((d) => (d.ontoggle = () => { d.open ? SEIS.abertos.add(d.dataset.setor) : SEIS.abertos.delete(d.dataset.setor); }));
+  $$("tr[data-p]", c).forEach((el) => (el.onclick = () => abrirPessoa(el.dataset.p)));
+}
 function resumoPessoa(p) {
   const uteis = {}, horarios = {};
   let domTrab = 0, domAberto = 0;
@@ -1250,7 +1286,7 @@ function telaRegras(c) {
     "Trabalhou de 4h a 6h: pausa de <b>15 min</b> (CLT art. 71).",
   ])}
   ${bloco("Horário de entrada e saída", t.emp, [
-    "A equipe entra no máximo <b>15 min antes de abrir</b> e sai no máximo <b>15 min depois de fechar</b>.",
+    "A equipe entra no máximo <b>15 min antes de abrir</b> e sai no máximo <b>15 min depois de fechar</b>. Gerência, açougue e produção podem passar disso quando o gerente mudar à mão (fica só aviso).",
     "Quem é da manhã continua de manhã: mudar mais de 1h o horário de hoje aparece como aviso. Combine antes com a pessoa.",
     `Horário desta loja: segunda a sexta ${horaTxt(H[1])}; sábado ${horaTxt(H[6])}; domingo ${dom === "fechado" ? "fechada" : horaTxt(H[0])}.`,
   ])}
