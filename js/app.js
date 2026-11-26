@@ -124,7 +124,7 @@ async function abrirEscala(id) {
   $("#conteudo").innerHTML = `<section class="cartao centro"><p class="dica">Abrindo a escala...</p></section>`;
   const { data, error } = await SB.from("escalas").select("*").eq("id", id).single();
   if (error) { toast("Não consegui abrir: " + error.message); return; }
-  ESC = data; E = data.atual; P = data.padrao; DESFAZER = []; DIA_SEL = null; _erroSalvar = null;
+  ESC = data; P = data.padrao; E = sanear(data.atual, P); ESC.atual = E; DESFAZER = []; DIA_SEL = null; _erroSalvar = null;
   FILTRO = { setor: "", busca: "", so: "" };
   try { localStorage.setItem("escala.aberta", id); } catch (e) {}
   const i = LISTA.findIndex((l) => l.id === id); if (i >= 0) Object.assign(LISTA[i], { status: data.status, lancada_em: data.lancada_em, lancada_por: data.lancada_por });
@@ -133,6 +133,27 @@ async function abrirEscala(id) {
   if (!location.hash || location.hash === "#/" || location.hash === "#/lojas") location.hash = "#/inicio"; else render();
 }
 function recalcular() { VAL = validarTudo(E, P); MUD = mudancas(E, P); }
+/* A escala do gerente (atual) pode ser gravada por quem tem login. Ao abrir, a estrutura do mês vem sempre
+   do padrão (que só o escritório grava) e o resto é forçado para número ou texto, para nada virar código na tela. */
+function sanear(A, B) {
+  const n = (v, d = null) => (v == null || v === "" || !isFinite(+v) ? d : Math.round(+v));
+  const t = (v, max = 120) => String(v ?? "").slice(0, max);
+  const out = clone(B);
+  out.pessoas = (Array.isArray(A && A.pessoas) ? A.pessoas : B.pessoas).map((p) => ({
+    id: t(p.id, 40), nome: t(p.nome), nomeCompleto: t(p.nomeCompleto), cargo: t(p.cargo), setor: t(p.setor, 40),
+    horas: [42, 36, 30, 24, 20].includes(+p.horas) ? +p.horas : 42, turno: p.turno === "M" || p.turno === "T" ? p.turno : null,
+    saidaMax: /^\d{2}:\d{2}$/.test(p.saidaMax || "") ? p.saidaMax : null, entradaMin: /^\d{2}:\d{2}$/.test(p.entradaMin || "") ? p.entradaMin : null,
+    entradaAtual: n(p.entradaAtual), semDomingo: !!p.semDomingo, semFeriado: !!p.semFeriado, novo: !!p.novo,
+    fora: p.fora ? { motivo: t(p.fora.motivo, 60) } : undefined,
+    dias: B.dias.map((x, i) => {
+      const c = (p.dias || [])[i] || {};
+      if (c.t === "T" && n(c.ini) != null && n(c.fim) != null) { const a = Array.isArray(c.alm) && n(c.alm[0]) != null && n(c.alm[1]) != null ? [n(c.alm[0]), n(c.alm[1])] : null; return { t: "T", ini: n(c.ini), fim: n(c.fim), alm: a }; }
+      return { t: ["F", "D", "X"].includes(c.t) ? c.t : "F" };
+    }),
+  }));
+  out.pessoas.forEach((p) => { if (!p.fora) delete p.fora; });
+  return out;
+}
 
 /* ================= GRAVAÇÃO ================= */
 function alterar(fn, msg) {
@@ -208,7 +229,7 @@ async function telaLojas(c) {
   if (!RESUMO) {
     const { data, error } = await SB.from("escalas").select("id,atual,padrao");
     if (error) { $("#tabLojas").innerHTML = `<p class="login-msg">${esc(error.message)}</p>`; return; }
-    RESUMO = Object.fromEntries(data.map((r) => { const v = validarTudo(r.atual, r.padrao); return [r.id, { erros: v.erros.length, avisos: v.avisos.length, mud: mudancas(r.atual, r.padrao).length, pessoas: r.atual.pessoas.filter((p) => !p.fora).length }]; }));
+    RESUMO = Object.fromEntries(data.map((r) => { const a = sanear(r.atual, r.padrao), v = validarTudo(a, r.padrao); return [r.id, { erros: v.erros.length, avisos: v.avisos.length, mud: mudancas(a, r.padrao).length, pessoas: a.pessoas.filter((p) => !p.fora).length }]; }));
   }
   const alvo = $("#tabLojas"); if (!alvo) return;
   const lanc = LISTA.filter((l) => l.status === "lancada").length;
