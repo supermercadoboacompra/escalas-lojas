@@ -170,6 +170,22 @@ let COB = null;
 function recalcular() { VAL = validarTudo(E, P); MUD = mudancas(E, P); COB = indiceCobertura(E, P.necMes, P.horas); }
 const pct = (v) => (v == null ? "-" : (Math.round(v * 1000) / 10).toLocaleString("pt-BR") + "%");
 const corPct = (v, bom, ok) => (v >= bom ? "verde" : v >= ok ? "amarelo" : "vermelho");
+/* faixa curta do índice na montagem da escala (atualiza a cada mudança) */
+let _cobPadrao = null;
+function faixaCobertura() {
+  if (!COB) return "";
+  if (!_cobPadrao || _cobPadrao.id !== ESC.id) _cobPadrao = { id: ESC.id, v: indiceCobertura(sanear(P, P), P.necMes, P.horas) };
+  const pad = _cobPadrao.v;
+  const seta = (a, b) => { const d = Math.round((a - b) * 1000) / 10; return Math.abs(d) < 0.1 ? "" : ` <span class="cob-dif ${d > 0 ? "sobe" : "desce"}">${d > 0 ? "+" : ""}${d.toLocaleString("pt-BR")}</span>`; };
+  const fraco = COB.setores[0];
+  return `<div class="cob-faixa" title="Índice de cobertura da escala aberta. O número pequeno é a diferença para a escala padrão.">
+    <span><small>Cobertura geral</small><b class="pct ${corPct(COB.geral, 0.85, 0.75)}">${pct(COB.geral)}</b>${seta(COB.geral, pad.geral)}</span>
+    <span><small>Obrigatórios juntos</small><b class="pct ${corPct(COB.obrig, 0.98, 0.9)}">${pct(COB.obrig)}</b>${seta(COB.obrig, pad.obrig)}</span>
+    <span><small>Faltando no mês</small><b>${Math.round(COB.horasFaltando).toLocaleString("pt-BR")}h</b></span>
+    <span><small>Sobrando no mês</small><b>${Math.round(COB.horasSobrando).toLocaleString("pt-BR")}h</b></span>
+    ${fraco ? `<span><small>Setor mais fraco</small><b>${esc(fraco.setor)} ${pct(fraco.pct)}</b></span>` : ""}
+  </div>`;
+}
 /* cartão do índice de cobertura (Início) */
 function cartaoCobertura() {
   if (!COB) return "";
@@ -323,7 +339,7 @@ function montarTopo() {
 }
 function montarAbas(rota) {
   const n = VAL ? VAL.erros.length : 0;
-  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ["dia", "Dia a dia"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["mudancas", "Mudanças" + (MUD && MUD.length ? ` <span class="selo-n amarelo">${MUD.length}</span>` : "")], ["regras", "Regras"], ["ajuda", "Como usar"]] : [];
+  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ["dia", "Dia a dia"], ["equipe", "Equipe"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["mudancas", "Mudanças" + (MUD && MUD.length ? ` <span class="selo-n amarelo">${MUD.length}</span>` : "")], ["regras", "Regras"], ["ajuda", "Como usar"]] : [];
   if (ehAdmin()) abas.unshift(["lojas", "Todas as lojas"]);
   $("#abas").innerHTML = abas.map(([k, t]) => `<a href="#/${k}" class="${k === rota ? "ativa" : ""}">${t}</a>`).join("");
 }
@@ -332,7 +348,7 @@ function render() {
   if (!ESC && rota !== "lojas") rota = ehAdmin() ? "lojas" : "inicio";
   montarAbas(rota);
   const c = $("#conteudo");
-  ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, dia: telaDia, movimento: telaMovimento, avisos: telaAvisos, mudancas: telaMudancas, regras: telaRegras, ajuda: telaAjuda }[rota] || telaInicio)(c);
+  ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, dia: telaDia, equipe: telaEquipe, movimento: telaMovimento, avisos: telaAvisos, mudancas: telaMudancas, regras: telaRegras, ajuda: telaAjuda }[rota] || telaInicio)(c);
 }
 
 /* ================= TODAS AS LOJAS (admin) ================= */
@@ -489,6 +505,7 @@ function telaEscala(c) {
   });
   c.innerHTML = `
   ${lancada ? `<div class="faixa ok">${ic("cadeado")}<div>Escala lançada em ${esc(quando(ESC.lancada_em))}. Para mudar, reabra.</div><span class="espaco"></span><button class="btn" id="reabrir">Reabrir para mudar</button></div>` : VAL.erros.length ? `<div class="faixa erro"><b>${VAL.erros.length}</b>&nbsp;${VAL.erros.length === 1 ? "coisa para arrumar (contorno vermelho)" : "coisas para arrumar (contorno vermelho)"}<span class="espaco"></span><a class="btn" href="#/avisos">Ver lista</a></div>` : `<div class="faixa ok">${ic("check")}<div>Nenhuma regra quebrada. Pode lançar quando quiser.</div><span class="espaco"></span><button class="btn laranja" id="lancar">Lançar escala</button></div>`}
+  ${faixaCobertura()}
   <div class="ferramentas">
     <input class="busca" id="busca" placeholder="Procurar pessoa" value="${esc(FILTRO.busca)}" aria-label="Procurar pessoa">
     <select id="fSetor" aria-label="Setor"><option value="">Todos os setores</option>${setores.map((s) => `<option ${s === FILTRO.setor ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
@@ -745,6 +762,63 @@ function telaDia(c) {
   $$("[data-p]", c).forEach((el) => (el.onclick = () => abrirCelula(el.dataset.p, i)));
   const ativo = $(".chip-dia.ativo", c); if (ativo) ativo.scrollIntoView({ block: "nearest", inline: "center" });
 }
+
+/* ================= EQUIPE (funcionários por setor) ================= */
+let EQ = { busca: "", fora: false };
+/* resumo da semana de uma pessoa, tirado da escala aberta */
+function resumoPessoa(p) {
+  const uteis = {}, horarios = {};
+  let domTrab = 0, domAberto = 0;
+  E.dias.forEach((x, i) => {
+    const c = p.dias[i];
+    if (x.fechado) return;
+    if (x.w >= 1 && x.w <= 5 && c.t !== "T") uteis[x.w] = (uteis[x.w] || 0) + 1;
+    if (x.w === 0 && x.fixo) { domAberto++; if (c.t === "T") domTrab++; }
+    if (c.t === "T") { const k = hm(c.ini) + " às " + hm(c.fim); horarios[k] = (horarios[k] || 0) + 1; }
+  });
+  const fixa = Object.entries(uteis).sort((a, b) => b[1] - a[1])[0];
+  const horario = Object.entries(horarios).sort((a, b) => b[1] - a[1])[0];
+  const lojaDom = E.loja.domingo;
+  const domingo = lojaDom === "fechado" ? "loja fechada" : lojaDom === "diaristas" ? "folga (domingo com diaristas)" : domAberto === 0 ? "-" : domTrab === 0 ? "folga todo domingo" : `trabalha ${domTrab} de ${domAberto} domingos`;
+  const turno = horario ? (minDe(horario[0].slice(0, 5)) < 660 ? "manhã" : "tarde") : "";
+  return { folgaFixa: fixa ? DIAS_SEM[+fixa[0]] : "-", horario: horario ? horario[0] : "sem dias de trabalho", turno, domingo };
+}
+function telaEquipe(c) {
+  const busca = EQ.busca.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const casa = (p) => !busca || (p.nome + " " + (p.cargo || "") + " " + p.setor).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().includes(busca);
+  const ativos_ = E.pessoas.filter((p) => !p.fora);
+  const setores = setoresDe(E);
+  const obrig = Object.fromEntries(SETORES_OBRIGATORIOS);
+  const total = ativos_.length, h30 = ativos_.filter((p) => p.horas === 30).length;
+  const porSetorNum = setores.map((s) => ({ s, n: ativos_.filter((p) => p.setor === s).length }));
+  const maxN = Math.max(1, ...porSetorNum.map((x) => x.n));
+  const cartoes = setores.map((s) => {
+    const ps = ativos_.filter((p) => p.setor === s && casa(p)).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    if (!ps.length) return "";
+    const n = ativos_.filter((p) => p.setor === s).length, pouco = obrig[s] && n < 3;
+    return `<section class="cartao eq-setor"><div class="regra-topo"><h2>${esc(s)} <span class="mini">${n} ${n === 1 ? "pessoa" : "pessoas"}</span></h2>${obrig[s] ? `<span class="selo-regra ${pouco ? "falta" : "emp"}">${pouco ? "obrigatório: pouca gente" : "obrigatório"}</span>` : ""}</div>
+      ${pouco ? `<p class="dica" style="color:var(--erro)">Setor obrigatório com ${n} ${n === 1 ? "pessoa" : "pessoas"}: com folgas e almoço não dá para cobrir todos os horários. O ideal é pelo menos 3.</p>` : ""}
+      <div class="eq-lista">${ps.map((p) => { const r = resumoPessoa(p); const comb = [p.entradaMin && `entra a partir das ${p.entradaMin}`, p.saidaMax && `sai até as ${p.saidaMax}`, p.semDomingo && p.horas !== 30 && "não trabalha domingo", p.semFeriado && "não trabalha feriado"].filter(Boolean);
+        return `<button class="eq-pessoa" data-p="${esc(p.id)}"><span class="eq-avatar ${r.turno === "manhã" ? "m" : "t"}">${esc(p.nome.split(" ").map((x) => x[0]).slice(0, 2).join(""))}</span>
+          <span class="eq-info"><b>${esc(p.nome)}</b><small>${esc(tituloBonito(p.cargo || ""))}${p.novo ? " · incluída" : ""}</small>
+          <span class="eq-tags"><i>${p.horas}h</i><i>${esc(r.horario)}</i><i>folga fixa: ${esc(r.folgaFixa)}</i><i>domingo: ${esc(r.domingo)}</i>${comb.map((t) => `<i class="comb">${esc(t)}</i>`).join("")}</span></span></button>`; }).join("")}</div></section>`;
+  }).join("");
+  const fora = E.pessoas.filter((p) => p.fora);
+  c.innerHTML = `
+  <section class="cartao"><h1>Equipe</h1>
+    <p class="dica">Quem está na escala de ${esc(mesTxt(ESC.mes))}, separado por setor. Toque na pessoa para ver o mês dela, mudar o setor ou as horas.</p>
+    <div class="numeros"><div class="numero"><b>${total}</b><span>pessoas na escala</span></div><div class="numero"><b>${setores.length}</b><span>setores</span></div><div class="numero"><b>${total - h30}</b><span>de 42h</span></div><div class="numero"><b>${h30}</b><span>de 30h (folgam todo domingo)</span></div></div>
+    <details class="abre"><summary>Pessoas por setor</summary><div><div class="hbarras">${porSetorNum.map((x) => `<div class="hbarra"><span class="hb-nome">${esc(x.s)}</span><div class="hb-pista"><div class="barra ${obrig[x.s] && x.n < 3 ? "cob-barra vermelho" : ""}" style="width:${(x.n / maxN) * 100}%"></div></div><span class="hb-val">${x.n}</span></div>`).join("")}</div></div></details>
+    <div class="ferramentas" style="margin:10px 0 0"><input class="busca" id="eqBusca" placeholder="Procurar por nome, cargo ou setor" value="${esc(EQ.busca)}" aria-label="Procurar">${travada() ? "" : `<span style="flex:1"></span><button class="btn" id="eqIncluir">${ic("mais")} Incluir pessoa</button>`}</div>
+  </section>
+  <div class="eq-grade">${cartoes || `<section class="cartao"><p class="dica">Ninguém com essa busca.</p></section>`}</div>
+  ${fora.length ? `<details class="abre"><summary>Tiradas da escala neste mês (${fora.length})</summary><div><table class="tab"><tbody>${fora.map((p) => `<tr class="clica" data-p="${esc(p.id)}"><td><b>${esc(p.nome)}</b><br><span class="mini">${esc(p.setor)}</span></td><td class="mini">${esc(p.fora.motivo || "")}</td></tr>`).join("")}</tbody></table></div></details>` : ""}
+  ${(E.fora || []).length ? `<details class="abre"><summary>Quem não entra na escala (${E.fora.length})</summary><div><p class="dica">Afastados, aprendizes, limpeza, depósito, administrativo e outros.</p><table class="tab"><tbody>${E.fora.map((f) => `<tr><td>${esc(tituloBonito(f.nome))}</td><td class="mini">${esc(tituloBonito(f.cargo || ""))}</td><td class="mini">${esc(f.motivo || "")}</td></tr>`).join("")}</tbody></table></div></details>` : ""}`;
+  const b = $("#eqBusca", c); b.oninput = () => { EQ.busca = b.value; const pos = b.selectionStart; telaEquipe(c); const n = $("#eqBusca", c); n.focus(); n.setSelectionRange(pos, pos); };
+  const bi = $("#eqIncluir", c); if (bi) bi.onclick = incluirPessoa;
+  $$("[data-p]", c).forEach((el) => (el.onclick = () => abrirPessoa(el.dataset.p)));
+}
+const tituloBonito = (s) => String(s || "").toLowerCase().replace(/(^|\s|\()(\S)/g, (m, a, b) => a + b.toUpperCase());
 
 /* ================= MOVIMENTO E PESSOAS =================
    Movimento = clientes por hora no caixa (KW). Venda = Prime, por setor. São fontes diferentes e ficam separadas.
