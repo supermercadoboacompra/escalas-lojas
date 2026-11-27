@@ -285,3 +285,18 @@ details.dia-dentro #diaDentro > .cartao { box-shadow: none; border: 0; padding: 
 .luzinhas { height: 9px; }
 .luzinhas::before { top: -8px; border-bottom-color: rgba(255, 255, 255, .35); }
 .bandeirinhas svg { height: 11px; }
+
+/* ---------- a grade rola junto com a página ---------- */
+.grade-escala { max-height: none; overflow-x: auto; overflow-y: hidden; }
+.grade-escala thead th { position: static; }
+.cab-fixo { position: fixed; z-index: 24; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; background: color-mix(in srgb, var(--sup) 94%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--borda); border-top: 0; border-radius: 0 0 12px 12px; box-shadow: 0 10px 20px -14px rgba(0, 20, 40, .45); opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .15s, transform .15s; }
+.cab-fixo::-webkit-scrollbar { display: none; }
+.cab-fixo.visivel { opacity: 1; transform: none; pointer-events: auto; }
+.cab-fixo table { border-collapse: separate; border-spacing: 0; font-size: 11px; }
+.cab-fixo th { padding: 4px 0; text-align: center; font-weight: 600; color: var(--texto2); line-height: 1.15; border-right: 1px solid color-mix(in srgb, var(--borda) 70%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--borda) 70%, transparent); background: var(--sup); }
+.cab-fixo th .n { display: block; font-size: 13px; color: var(--texto); font-weight: 700; }
+.cab-fixo th.dom, .cab-fixo th.dom .n { color: var(--laranja); }
+.cab-fixo th.nome { position: sticky; left: 0; z-index: 2; text-align: left; padding: 4px 10px; }
+.cab-fixo tr.conta th { font-size: 10px; font-weight: 500; color: var(--texto3); padding: 2px 0; }
+.cab-fixo th.semana-ini { border-left: 2px solid var(--texto3); }
+@media print { .cab-fixo { display: none !important; } }

@@ -528,6 +528,7 @@ function render() {
   // "Dia a dia" agora fica dentro de "Movimento e pessoas", numa parte que abre ao tocar
   if (rota === "dia") { rota = "movimento"; ABRIR_DIA = true; try { history.replaceState(null, "", "#/movimento"); } catch (e) {} }
   montarAbas(rota);
+  if (_cabFixo) { window.removeEventListener("scroll", _cabFixo.atualizar); window.removeEventListener("resize", _cabFixo.medir); _cabFixo.el.remove(); _cabFixo = null; }   // cabeçalho preso da grade some ao trocar de tela
   const c = $("#conteudo");
   ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, "6x1": telaSeisUm, dia: telaDia, equipe: telaEquipe, movimento: telaMovimento, avisos: telaAvisos, regras: telaRegras, ajuda: telaAjuda }[rota] || telaInicio)(c);
 }
@@ -856,12 +857,44 @@ function telaEscala(c) {
   const bl = $("#lancar"); if (bl) bl.onclick = confirmarLancar;
   const br = $("#reabrir"); if (br) br.onclick = confirmarReabrir;
   $("#imprimir").onclick = imprimir; $("#excel").onclick = baixarExcel;
-  ligarArrastar(c); marcarMovida(c);
+  ligarArrastar(c); marcarMovida(c); cabecalhoFixo(c);
   $(".grade-escala").onclick = (e) => {
     if (e.target.closest(".alca")) return;
     const cel = e.target.closest(".cel"); if (cel) { abrirCelula(cel.dataset.p, +cel.dataset.i); return; }
     const nm = e.target.closest("td.nome[data-p]"); if (nm) abrirPessoa(nm.dataset.p);
   };
+}
+
+/* a grade rola junto com a página; quando o cabeçalho dos dias sai da tela, uma cópia fica presa embaixo das abas
+   (e acompanha a rolagem para os lados) */
+let _cabFixo = null;
+function cabecalhoFixo(c) {
+  if (_cabFixo) { window.removeEventListener("scroll", _cabFixo.atualizar); window.removeEventListener("resize", _cabFixo.medir); if (_cabFixo.el) _cabFixo.el.remove(); _cabFixo = null; }
+  const grade = $(".grade-escala", c), tab = grade && grade.querySelector("table"); if (!tab || !tab.tHead) return;
+  const el = document.createElement("div"); el.className = "cab-fixo"; el.setAttribute("aria-hidden", "true");
+  el.innerHTML = `<table>${tab.tHead.outerHTML}</table>`;
+  document.body.appendChild(el);
+  const medir = () => {
+    const orig = [...tab.tHead.rows], copia = [...el.querySelector("thead").rows];
+    orig.forEach((tr, k) => [...tr.cells].forEach((td, j) => { const w = td.getBoundingClientRect().width + "px", cc = copia[k].cells[j]; if (cc) { cc.style.width = w; cc.style.minWidth = w; cc.style.maxWidth = w; } }));
+    const r = grade.getBoundingClientRect(); el.style.left = r.left + "px"; el.style.width = r.width + "px";
+    atualizar();
+  };
+  const topoAbas = () => { const t = $("#topo"), a = $("#abas"); let y = t ? t.getBoundingClientRect().bottom : 0; if (a && getComputedStyle(a).position === "sticky") y = Math.max(y, a.getBoundingClientRect().bottom); return Math.max(0, y); };
+  const atualizar = () => {
+    if (!grade.isConnected) { window.removeEventListener("scroll", atualizar); window.removeEventListener("resize", medir); el.remove(); return; }
+    const y = topoAbas(), rg = grade.getBoundingClientRect(), rh = tab.tHead.getBoundingClientRect();
+    const mostra = rh.top < y && rg.bottom > y + rh.height + 40;
+    el.classList.toggle("visivel", mostra);
+    el.style.top = y + "px";
+    el.scrollLeft = grade.scrollLeft;
+  };
+  grade.addEventListener("scroll", () => { el.scrollLeft = grade.scrollLeft; }, { passive: true });
+  el.addEventListener("scroll", () => { if (grade.scrollLeft !== el.scrollLeft) grade.scrollLeft = el.scrollLeft; }, { passive: true });
+  window.addEventListener("scroll", atualizar, { passive: true });
+  window.addEventListener("resize", medir);
+  _cabFixo = { el, atualizar, medir };
+  requestAnimationFrame(medir);
 }
 
 /* ================= MUDAR A ORDEM DAS PESSOAS (dentro do setor) ================= */
