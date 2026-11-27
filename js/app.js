@@ -28,6 +28,7 @@ const IC = {
   lua: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
   baixo: '<path d="M6 9l6 6 6-6"/>',
+  arrastar: '<circle cx="9" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.3" fill="currentColor" stroke="none"/>',
   cadeado: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   esq: '<path d="M15 5l-7 7 7 7"/>', dir: '<path d="M9 5l7 7-7 7"/>',
   pessoas: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2c3 .2 5.5 2.6 5.5 5.8"/>',
@@ -383,7 +384,9 @@ function alterar(fn, msg) {
   if (msg) toast(msg, { rotulo: "Desfazer", fn: desfazer });
   return true;
 }
-function depoisDeMexer() { recalcular(); if (ABERTA) agendarSalvar(); else { SUJO = MUD.length > 0; mostrarSalvo(); if (SUJO) salvarSozinha(); } render(); }
+function depoisDeMexer() { recalcular(); if (ABERTA) agendarSalvar(); else { SUJO = MUD.length > 0 || ordemMudou(); mostrarSalvo(); if (SUJO) salvarSozinha(); } render(); }
+/* a ordem das pessoas mudou em relação à padrão? (arrastar também conta como mexer) */
+function ordemMudou() { const ids = new Set(P.pessoas.map((p) => p.id)); return E.pessoas.filter((p) => ids.has(p.id)).map((p) => p.id).join("|") !== P.pessoas.map((p) => p.id).join("|"); }
 /* mexeu na padrão: guarda na hora numa escala nova (mesmo com coisas para arrumar), para não perder nada */
 let _criando = false;
 async function salvarSozinha() {
@@ -700,12 +703,13 @@ function telaEscala(c) {
   const visiveis = E.pessoas.filter((p) => (!FILTRO.setor || p.setor === FILTRO.setor) && (!busca || p.nome.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().includes(busca)) && (FILTRO.so !== "erro" || errosDia[p.id]) && (FILTRO.so !== "mudou" || MUD.some((m) => m.pessoa === p.id)) && (!p.fora || FILTRO.so === "fora"));
   const conta = E.dias.map((x, i) => E.pessoas.filter((p) => !p.fora && p.dias[i].t === "T" && (!FILTRO.setor || p.setor === FILTRO.setor)).length);
   const iniSemana = (i) => i > 0 && E.dias[i].w === 1;
+  const podeMover = !lancada && !busca && FILTRO.so !== "erro" && FILTRO.so !== "mudou";
   let linhas = "";
   setores.concat(FILTRO.so === "fora" ? [...new Set(E.pessoas.filter((p) => p.fora).map((p) => p.setor))].filter((s) => !setores.includes(s)) : []).forEach((s) => {
     const ps = visiveis.filter((p) => p.setor === s); if (!ps.length) return;
     linhas += `<tr class="setor"><td colspan="${E.dias.length + 1}">${esc(s)} · ${ps.length}</td></tr>`;
     ps.forEach((p) => {
-      linhas += `<tr class="${p.fora ? "pessoa-fora" : ""}${p.vaga ? " linha-vaga" : ""}${p.diarista ? " linha-diarista" : ""}"><td class="nome" data-p="${esc(p.id)}"><b>${seloDe(p)}${esc(p.nome)}${errosDia[p.id] ? '<span class="marca-erro"></span>' : ""}</b><small>${p.diarista ? `${diasDoDiarista(p)} ${diasDoDiarista(p) === 1 ? "dia" : "dias"} no mês · até 8h por dia` : p.horas + "h"}${p.turno ? " · turno " + (p.turno === "M" ? "manhã" : "tarde") : ""}${p.vaga ? (p.inicio ? " · começa " + isoBr(p.inicio) : " · a contratar") : p.diarista ? "" : p.novo ? " · incluída" : ""}${p.fora ? " · fora da escala" : ""}</small></td>`;
+      linhas += `<tr data-linha="${esc(p.id)}" class="${p.fora ? "pessoa-fora" : ""}${p.vaga ? " linha-vaga" : ""}${p.diarista ? " linha-diarista" : ""}"><td class="nome${podeMover ? " com-alca" : ""}" data-p="${esc(p.id)}">${podeMover ? `<span class="alca" data-mover="${esc(p.id)}" role="button" tabindex="0" title="Arraste para mudar de lugar" aria-label="Mudar ${esc(p.nome)} de lugar: arraste, ou use as setas para cima e para baixo">${ic("arrastar")}</span>` : ""}<b>${seloDe(p)}${esc(p.nome)}${errosDia[p.id] ? '<span class="marca-erro"></span>' : ""}</b><small>${p.diarista ? `${diasDoDiarista(p)} ${diasDoDiarista(p) === 1 ? "dia" : "dias"} no mês · até 8h por dia` : p.horas + "h"}${p.turno ? " · turno " + (p.turno === "M" ? "manhã" : "tarde") : ""}${p.vaga ? (p.inicio ? " · começa " + isoBr(p.inicio) : " · a contratar") : p.diarista ? "" : p.novo ? " · incluída" : ""}${p.fora ? " · fora da escala" : ""}</small></td>`;
       E.dias.forEach((x, i) => {
         const cc = p.dias[i], k = p.id + ":" + i;
         linhas += `<td class="${iniSemana(i) ? "semana-ini" : ""}"><div class="cel ${classeCel(x, cc)}${mudou[k] ? " mudou" : ""}${errosDia[k] ? " tem-erro" : avisosDia[k] ? " tem-aviso" : ""}" data-p="${esc(p.id)}" data-i="${i}" title="${esc(p.nome)} · ${DIAS_SEM[x.w]} ${dataTxt(x)}">${textoCel(x, cc)}</div></td>`;
@@ -740,10 +744,93 @@ function telaEscala(c) {
   const bl = $("#lancar"); if (bl) bl.onclick = confirmarLancar;
   const br = $("#reabrir"); if (br) br.onclick = confirmarReabrir;
   $("#imprimir").onclick = imprimir; $("#excel").onclick = baixarExcel;
+  ligarArrastar(c); marcarMovida(c);
   $(".grade-escala").onclick = (e) => {
+    if (e.target.closest(".alca")) return;
     const cel = e.target.closest(".cel"); if (cel) { abrirCelula(cel.dataset.p, +cel.dataset.i); return; }
     const nm = e.target.closest("td.nome[data-p]"); if (nm) abrirPessoa(nm.dataset.p);
   };
+}
+
+/* ================= MUDAR A ORDEM DAS PESSOAS (dentro do setor) ================= */
+/* coloca a pessoa "id" antes (ou depois) da pessoa "alvo"; só no mesmo setor */
+function moverPessoa(id, alvo, depois) {
+  if (id === alvo) return;
+  const p = pessoa(id), q = pessoa(alvo); if (!p || !q || p.setor !== q.setor) return;
+  alterar(() => {
+    const lista = E.pessoas.filter((x) => x.id !== id);
+    const k = lista.findIndex((x) => x.id === alvo);
+    lista.splice(depois ? k + 1 : k, 0, p);
+    E.pessoas = lista;
+  }, `${p.nome} mudou de lugar.`);
+  // a linha pisca no lugar novo, para ver onde ela foi parar (sobrevive ao redesenho da tela)
+  MOVIDA = { id, ate: Date.now() + 1200 };
+  const tr = document.querySelector(`tr[data-linha="${CSS.escape(id)}"]`); if (tr) tr.classList.add("recem-movida");
+}
+let MOVIDA = null;
+function marcarMovida(c) {
+  if (!MOVIDA || Date.now() > MOVIDA.ate) return;
+  const tr = $(`tr[data-linha="${CSS.escape(MOVIDA.id)}"]`, c); if (!tr) return;
+  tr.classList.add("recem-movida"); tr.style.setProperty("--atraso", `-${1200 - (MOVIDA.ate - Date.now())}ms`);
+}
+function ligarArrastar(c) {
+  const grade = $(".grade-escala", c); if (!grade) return;
+  const vizinhos = (id) => [...grade.querySelectorAll("tr[data-linha]")].filter((tr) => { const q = pessoa(tr.dataset.linha); return q && q.setor === pessoa(id).setor; });
+  // teclado: setas sobem e descem a pessoa
+  $$(".alca", grade).forEach((a) => (a.onkeydown = (e) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const id = a.dataset.mover, vs = vizinhos(id), k = vs.findIndex((tr) => tr.dataset.linha === id);
+    const alvo = vs[e.key === "ArrowUp" ? k - 1 : k + 1]; if (!alvo) return;
+    moverPessoa(id, alvo.dataset.linha, e.key === "ArrowDown");
+    const nova = $(`.alca[data-mover="${CSS.escape(id)}"]`); if (nova) nova.focus();
+  }));
+  // arrastar com mouse ou dedo
+  $$(".alca", grade).forEach((a) => (a.onpointerdown = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const id = a.dataset.mover, linha = a.closest("tr"), vs = vizinhos(id), p = pessoa(id);
+    linha.classList.add("arrastando"); document.body.classList.add("movendo");
+    // cartão que segue o dedo/mouse
+    const fan = document.createElement("div");
+    fan.className = "fantasma";
+    fan.innerHTML = `${ic("arrastar")}<div><b>${esc(p.nome)}</b><small>${esc(p.setor)} · solte onde quiser</small></div>`;
+    document.body.appendChild(fan);
+    const seguir = (ev) => { fan.style.transform = `translate(${ev.clientX + 14}px, ${ev.clientY - 22}px) rotate(-2deg)`; };
+    seguir(e);
+    // as outras linhas deslizam para abrir espaço (anima a troca de lugar)
+    const deslizar = (mexer) => {
+      const antes = new Map(vs.map((t) => [t, t.getBoundingClientRect().top]));
+      mexer();
+      vs.forEach((t) => { if (t === linha) return; const d = antes.get(t) - t.getBoundingClientRect().top; if (!d) return;
+        t.style.transition = "none"; t.style.transform = `translateY(${d}px)`;
+        requestAnimationFrame(() => { t.style.transition = "transform .18s ease"; t.style.transform = ""; }); });
+    };
+    const mover = (ev) => {
+      seguir(ev);
+      const tr = vs.find((t) => { if (t === linha) return false; const r = t.getBoundingClientRect(); return ev.clientY >= r.top && ev.clientY < r.bottom; });
+      if (tr) {
+        const r = tr.getBoundingClientRect(), depois = ev.clientY > r.top + r.height / 2;
+        const certo = depois ? tr.nextElementSibling === linha : tr.previousElementSibling === linha;
+        if (!certo) deslizar(() => tr.parentNode.insertBefore(linha, depois ? tr.nextSibling : tr));
+      }
+      // rolar a página quando chega perto da borda
+      if (ev.clientY < 70) window.scrollBy(0, -14); else if (ev.clientY > window.innerHeight - 50) window.scrollBy(0, 14);
+    };
+    const soltar = () => {
+      document.removeEventListener("pointermove", mover); document.removeEventListener("pointerup", soltar); document.removeEventListener("pointercancel", soltar);
+      fan.remove(); document.body.classList.remove("movendo"); linha.classList.remove("arrastando");
+      vs.forEach((t) => { t.style.transition = ""; t.style.transform = ""; });
+      // onde ela ficou na tela vira a nova ordem
+      const ordem = [...grade.querySelectorAll("tr[data-linha]")].filter((t) => vs.includes(t)), k = ordem.indexOf(linha);
+      const antesNoBanco = E.pessoas.filter((q) => q.setor === p.setor).map((q) => q.id).join("|");
+      const nova = ordem.map((t) => t.dataset.linha).join("|");
+      if (nova === vs.map((t) => t.dataset.linha).join("|") || k < 0) { render(); return; }
+      if (ordem[k + 1]) moverPessoa(id, ordem[k + 1].dataset.linha, false); else moverPessoa(id, ordem[k - 1].dataset.linha, true);
+      if (antesNoBanco === E.pessoas.filter((q) => q.setor === p.setor).map((q) => q.id).join("|")) render();
+    };
+    document.addEventListener("pointermove", mover); document.addEventListener("pointerup", soltar); document.addEventListener("pointercancel", soltar);
+  }));
 }
 
 /* ================= EDITAR UM DIA ================= */
@@ -1333,6 +1420,7 @@ function telaAjuda(c) {
       <li><div><b>Toque num dia para mudar.</b> Dá para escolher Trabalha ou Folga, mudar entrada, saída e intervalo, e usar o mesmo horário na semana toda.</div></li>
       <li><div><b>Trocar a folga de dia:</b> toque na folga (F) e depois no dia da semana em que a pessoa vai folgar no lugar.</div></li>
       <li><div><b>Toque no nome da pessoa</b> para ver as horas de cada semana, mudar o setor ou as horas do contrato, voltar a pessoa ao padrão ou tirar da escala (saiu, afastou).</div></li>
+      <li><div><b>Mudar a ordem das pessoas:</b> segure os pontinhos à esquerda do nome e arraste para cima ou para baixo, dentro do mesmo setor. As outras linhas abrem espaço e, ao soltar, a linha pisca no lugar novo. No computador, dá também para tocar nos pontinhos e usar as setas do teclado.</div></li>
       <li><div><b>"Incluir pessoa"</b> serve para quem entrou agora. A escala dela começa igual à de um colega do setor.</div></li>
       <li><div><b>Vaga</b> (em "Incluir pessoa"): para quem ainda vai ser contratado. Entra na escala com horário, folga fixa e dia de início, aparece com o selo VAGA e conta na cobertura. Quando a pessoa entrar na Senior, o aviso dela tem o botão "Ocupar a vaga".</div></li>
       <li><div><b>Diarista</b> (em "Incluir pessoa"): pessoa de fora paga pelo dia, até 8h, para cobrir dias ou horários. Ex.: o gerente folga todo domingo; inclua um diarista na Gerência que vem todos os domingos e o erro de gerente na abertura/fechamento some. As regras da 5x2 não valem para diarista.</div></li>

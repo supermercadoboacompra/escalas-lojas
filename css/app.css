@@ -361,8 +361,8 @@ details.eq-setor > :not(summary) { margin: 0 18px; } details.eq-setor .eq-lista 
 .alcance { display: grid; gap: 6px; margin-top: 8px; }
 
 /* bolinha de "coisas para arrumar" e menu de escolher a escala */
-.bol-erro { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: #d93636; color: #fff; font-size: .72rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; vertical-align: 2px; }
-.ver-btn .bol-erro { min-width: 19px; height: 19px; font-size: .7rem; background: #ef4444; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); vertical-align: 0; }
+.bol-erro { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: #d93636; color: #fff; font-size: 11px; font-weight: 700; line-height: 20px; font-variant-numeric: tabular-nums; vertical-align: middle; text-align: center; }
+.ver-btn .bol-erro { background: #ef4444; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
 .ver-menu { position: relative; }
 .ver-btn { display: inline-flex; align-items: center; gap: 8px; max-width: 260px; background: rgba(255, 255, 255, .12); color: #fff; border: 1px solid rgba(255, 255, 255, .25); border-radius: 10px; padding: 6px 8px 6px 12px; font: inherit; font-weight: 600; cursor: pointer; }
 .ver-btn:hover, .ver-btn[aria-expanded="true"] { background: rgba(255, 255, 255, .2); }
@@ -380,6 +380,29 @@ details.eq-setor > :not(summary) { margin: 0 18px; } details.eq-setor .eq-lista 
 .ver-txt small { display: block; color: var(--texto3); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ver-estado { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 600; white-space: nowrap; flex: none; }
 .ver-estado.erro { color: var(--erro); background: var(--erro-fundo); padding: 3px 10px 3px 3px; border-radius: 99px; }
-.ver-estado.erro .bol-erro { vertical-align: 0; }
 .ver-estado.ok { color: var(--ok); background: var(--ok-fundo); padding: 4px 10px 4px 8px; border-radius: 99px; }
 .ver-estado .ic { width: 15px; height: 15px; }
+
+/* mudar a ordem das pessoas: puxador e onde ela vai cair */
+.grade-escala td.nome.com-alca { padding-left: 26px; }
+.alca { position: absolute; left: 3px; top: 50%; transform: translateY(-50%); width: 20px; height: 30px; display: grid; place-items: center; border-radius: 6px; color: var(--texto3); cursor: grab; touch-action: none; opacity: .55; }
+.alca .ic { width: 16px; height: 16px; }
+.grade-escala tr:hover .alca, .alca:focus-visible { opacity: 1; }
+.alca:hover { background: var(--sup2); color: var(--texto); }
+.alca:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+body.movendo, body.movendo * { cursor: grabbing !important; user-select: none; }
+/* a linha que está sendo arrastada fica marcada em laranja no lugar onde vai cair */
+.grade-escala tr.arrastando td { background: color-mix(in srgb, var(--laranja) 12%, var(--sup)) !important; }
+.grade-escala tr.arrastando td .cel { opacity: .55; }
+.grade-escala tr.arrastando td:first-child { box-shadow: inset 4px 0 0 var(--laranja); }
+.grade-escala tr.arrastando .alca { opacity: 1; color: var(--laranja); }
+.fantasma { position: fixed; left: 0; top: 0; z-index: 200; pointer-events: none; display: flex; align-items: center; gap: 10px; padding: 10px 16px 10px 10px; background: var(--sup); color: var(--texto); border: 2px solid var(--laranja); border-radius: 12px; box-shadow: 0 18px 40px -10px rgba(0, 20, 40, .45); animation: pega .15s ease-out; }
+.fantasma .ic { width: 18px; height: 18px; color: var(--laranja); }
+.fantasma b { display: block; font-size: 14px; }
+.fantasma small { display: block; font-size: 11.5px; color: var(--texto3); }
+@keyframes pega { from { opacity: 0; scale: .9; } to { opacity: 1; scale: 1; } }
+/* depois de soltar, a linha pisca no lugar novo */
+.grade-escala tr.recem-movida td { animation: pisca-linha 1.2s ease-out var(--atraso, 0ms); }
+@keyframes pisca-linha { 0%, 25% { background: color-mix(in srgb, var(--laranja) 28%, var(--sup)); } 100% { background: var(--sup); } }
+@media (prefers-reduced-motion: reduce) { .fantasma, .grade-escala tr.recem-movida td { animation: none; } }
+@media (hover: none) { .alca { opacity: .8; } }
