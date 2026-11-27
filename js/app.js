@@ -350,13 +350,15 @@ function horaCombinada(v) {
   if (typeof v === "number" && isFinite(v) && v >= 0 && v <= 1440) return hm(v);
   return /^\d{2}:\d{2}$/.test(String(v || "")) ? String(v) : null;
 }
+/* contrato cheio do mês: 42h, ou 40h a partir de dezembro de 2027 (8h por dia) */
+function horaCheia(X) { const m = String(((X || E || P || {}).mes && `${(X || E || P).mes.ano}-${String((X || E || P).mes.mes).padStart(2, "0")}`) || (ESC && ESC.mes) || ""); return m >= "2027-12" ? 40 : 42; }
 function sanear(A, B) {
   const n = (v, d = null) => (v == null || v === "" || !isFinite(+v) ? d : Math.round(+v));
   const t = (v, max = 120) => String(v ?? "").slice(0, max);
   const out = clone(B);
   out.pessoas = (Array.isArray(A && A.pessoas) ? A.pessoas : B.pessoas).map((p) => ({
     id: t(p.id, 40), chave: n(p.chave), nome: t(p.nome), nomeCompleto: t(p.nomeCompleto), cargo: t(p.cargo), setor: t(p.setor, 40),
-    horas: [42, 36, 30, 24, 20].includes(+p.horas) ? +p.horas : 42, turno: p.turno === "M" || p.turno === "T" ? p.turno : null,
+    horas: [42, 40, 36, 30, 24, 20].includes(+p.horas) ? +p.horas : horaCheia(B), turno: p.turno === "M" || p.turno === "T" ? p.turno : null,
     saidaMax: horaCombinada(p.saidaMax), entradaMin: horaCombinada(p.entradaMin),
     entradaAtual: n(p.entradaAtual), semDomingo: !!p.semDomingo, semFeriado: !!p.semFeriado, novo: !!p.novo, subGerente: !!p.subGerente,
     vaga: !!p.vaga, diarista: !!p.diarista, inicio: /^\d{4}-\d{2}-\d{2}$/.test(String(p.inicio || "")) ? String(p.inicio) : null,
@@ -368,6 +370,10 @@ function sanear(A, B) {
     }),
   }));
   out.pessoas.forEach((p) => { if (!p.fora) delete p.fora; if (p.chave == null) delete p.chave; if (!p.vaga) delete p.vaga; if (!p.diarista) delete p.diarista; if (!p.inicio) delete p.inicio; });
+  // turnos por setor cadastrados pela loja
+  const fonteT = (A && A.turnos && typeof A.turnos === "object") ? A.turnos : (B.turnos && typeof B.turnos === "object" ? B.turnos : {});
+  out.turnos = {};
+  Object.entries(fonteT).slice(0, 40).forEach(([setor, lista]) => { if (!Array.isArray(lista)) return; const ok = lista.slice(0, 20).map((x) => ({ id: t(x && x.id, 20), nome: t(x && x.nome, 30), ini: n(x && x.ini), fim: n(x && x.fim), alm: x && Array.isArray(x.alm) && n(x.alm[0]) != null && n(x.alm[1]) != null ? [n(x.alm[0]), n(x.alm[1])] : null })).filter((x) => x.id && x.nome && x.ini != null && x.fim != null); if (ok.length) out.turnos[t(setor, 40)] = ok; });
   // avisos do quadro que o gerente já resolveu (só textos curtos)
   out.alertasVistos = (Array.isArray(A && A.alertasVistos) ? A.alertasVistos : []).filter((k) => typeof k === "string" && k.length < 80).slice(0, 300);
   return out;
@@ -384,7 +390,7 @@ function alterar(fn, msg) {
   if (msg) toast(msg, { rotulo: "Desfazer", fn: desfazer });
   return true;
 }
-function depoisDeMexer() { recalcular(); if (ABERTA) agendarSalvar(); else { SUJO = MUD.length > 0 || ordemMudou(); mostrarSalvo(); if (SUJO) salvarSozinha(); } render(); }
+function depoisDeMexer() { recalcular(); if (ABERTA) agendarSalvar(); else { SUJO = MUD.length > 0 || ordemMudou() || JSON.stringify(E.turnos || {}) !== JSON.stringify(P.turnos || {}); mostrarSalvo(); if (SUJO) salvarSozinha(); } render(); }
 /* a ordem das pessoas mudou em relação à padrão? (arrastar também conta como mexer) */
 function ordemMudou() { const ids = new Set(P.pessoas.map((p) => p.id)); return E.pessoas.filter((p) => ids.has(p.id)).map((p) => p.id).join("|") !== P.pessoas.map((p) => p.id).join("|"); }
 /* mexeu na padrão: guarda na hora numa escala nova (mesmo com coisas para arrumar), para não perder nada */
@@ -471,7 +477,9 @@ function mostrarSalvo() {
 /* ================= TOPO E ABAS ================= */
 function montarTopo() {
   const lojas = [...new Map(LISTA.map((l) => [l.loja_cod, l])).values()];
-  const meses = ESC ? LISTA.filter((l) => l.loja_cod === ESC.loja_cod) : [];
+  const meses = ESC ? LISTA.filter((l) => l.loja_cod === ESC.loja_cod).sort((a, b) => String(a.mes).localeCompare(String(b.mes))) : [];
+  const kMes = ESC ? meses.findIndex((m) => m.id === ESC.id) : -1;
+  const vizMes = (d) => { const [a, m] = String(ESC.mes).split("-").map(Number); const dt = new Date(a, m - 1 + d, 1); return MESES[dt.getMonth()]; };
   const tema = temaAtual();
   const seletorEscala = !ESC ? "" : travada()
     ? `<span class="loja-nome" title="Escala lançada">${ic("cadeado")} ${esc(nomeAberta())}</span>`
@@ -479,7 +487,7 @@ function montarTopo() {
        <button class="btn-topo" id="btSalvar" title="Salvar">${ic("check")} Salvar</button>`;
   $("#topo").innerHTML = `<div class="marca"><span class="ponto"></span><span class="txt">Escalas das Lojas</span></div>
     ${ehAdmin() ? `<select class="loja-sel" id="lojaSel" aria-label="Loja"><option value="">Todas as lojas</option>${lojas.map((l) => `<option value="${esc(l.loja_cod)}" ${ESC && ESC.loja_cod === l.loja_cod ? "selected" : ""}>${esc(l.loja_nome)}</option>`).join("")}</select>` : ESC ? `<span class="loja-nome">${esc(ESC.loja_nome)}</span>` : ""}
-    ${meses.length > 1 ? `<select class="loja-sel" id="mesSel" aria-label="Mês">${meses.map((m) => `<option value="${esc(m.id)}" ${m.id === ESC.id ? "selected" : ""}>${esc(mesTxt(m.mes))}</option>`).join("")}</select>` : ESC ? `<span class="loja-nome" style="opacity:.75">${esc(mesTxt(ESC.mes))}</span>` : ""}
+    ${ESC ? `<div class="mes-troca" role="group" aria-label="Mês da escala"><button type="button" id="mesAnt" ${kMes > 0 ? "" : "disabled"} title="${kMes > 0 ? "Ir para " + esc(mesTxt(meses[kMes - 1].mes)) : "A escala de " + vizMes(-1) + " ainda não foi criada"}" aria-label="Mês anterior">${ic("esq")}</button><span class="mes-nome">${esc(mesTxt(ESC.mes))}</span><button type="button" id="mesProx" ${kMes >= 0 && kMes < meses.length - 1 ? "" : "disabled"} title="${kMes >= 0 && kMes < meses.length - 1 ? "Ir para " + esc(mesTxt(meses[kMes + 1].mes)) : "A escala de " + vizMes(1) + " ainda não foi criada"}" aria-label="Próximo mês">${ic("dir")}</button></div>` : ""}
     ${seletorEscala}
     <span class="espaco"></span><span id="salvo" class="salvo"></span>
     <div class="tema-chave" role="group" aria-label="Aparência"><button data-tema="light" class="${tema === "light" ? "sel" : ""}" title="Claro" aria-label="Modo claro">${ic("sol")}</button><button data-tema="dark" class="${tema === "dark" ? "sel" : ""}" title="Escuro" aria-label="Modo escuro">${ic("lua")}</button></div>
@@ -490,7 +498,9 @@ function montarTopo() {
     if (!ls.value) { await salvarAgora(); ESC = null; try { localStorage.removeItem("escala.aberta"); } catch (e) {} montarTopo(); location.hash = "#/lojas"; render(); return; }
     const m = LISTA.find((l) => l.loja_cod === ls.value); abrirEscala(m.id);
   };
-  const ms = $("#mesSel"); if (ms) ms.onchange = async () => { if (!(await podeSairDoPadrao())) { ms.value = ESC.id; return; } abrirEscala(ms.value); };
+  const irMes = async (d) => { const alvo = meses[kMes + d]; if (!alvo || !(await podeSairDoPadrao())) return; abrirEscala(alvo.id); };
+  const ma = $("#mesAnt"); if (ma) ma.onclick = () => irMes(-1);
+  const mp = $("#mesProx"); if (mp) mp.onclick = () => irMes(1);
   ligarMenuEscalas();
   const bs = $("#btSalvar"); if (bs) bs.onclick = botaoSalvar;
   $$("[data-tema]").forEach((b) => (b.onclick = () => aplicarTema(b.dataset.tema)));
@@ -498,13 +508,15 @@ function montarTopo() {
 }
 function montarAbas(rota) {
   const n = VAL ? VAL.erros.length : 0;
-  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ...(tem6x1() ? [["6x1", "Escala 6x1"]] : []), ["dia", "Dia a dia"], ["equipe", "Equipe"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["regras", "Regras"], ["ajuda", "Como usar"]] : [];
+  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ...(tem6x1() ? [["6x1", "Escala 6x1"]] : []), ["equipe", "Equipe"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["regras", "Regras"], ["ajuda", "Como usar"]] : [];
   if (ehAdmin()) abas.unshift(["lojas", "Todas as lojas"]);
   $("#abas").innerHTML = abas.map(([k, t]) => `<a href="#/${k}" class="${k === rota ? "ativa" : ""}">${t}</a>`).join("");
 }
 function render() {
   let rota = (location.hash.replace(/^#\//, "") || "inicio").split("?")[0];
   if (!ESC && rota !== "lojas") rota = ehAdmin() ? "lojas" : "inicio";
+  // "Dia a dia" agora fica dentro de "Movimento e pessoas", numa parte que abre ao tocar
+  if (rota === "dia") { rota = "movimento"; ABRIR_DIA = true; try { history.replaceState(null, "", "#/movimento"); } catch (e) {} }
   montarAbas(rota);
   const c = $("#conteudo");
   ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, "6x1": telaSeisUm, dia: telaDia, equipe: telaEquipe, movimento: telaMovimento, avisos: telaAvisos, regras: telaRegras, ajuda: telaAjuda }[rota] || telaInicio)(c);
@@ -539,28 +551,48 @@ async function telaLojas(c) {
   $$("tr[data-id]", alvo).forEach((tr) => (tr.onclick = () => abrirEscala(tr.dataset.id)));
 }
 
+/* o mês desenhado: uma barra por dia, do tamanho de quantas pessoas trabalham */
+function mesEmBarras() {
+  const conta = E.dias.map((x, i) => E.pessoas.filter((p) => !p.fora && p.dias[i].t === "T").length);
+  const max = Math.max(1, ...conta);
+  const errDia = {}; VAL.erros.forEach((v) => { if (v.dia != null) errDia[v.dia] = (errDia[v.dia] || 0) + 1; });
+  const barras = E.dias.map((x, i) => {
+    const n = errDia[i] || 0;
+    const cls = (x.fechado ? "fech" : x.w === 0 ? "dom" : "") + (i > 0 && x.w === 1 ? " seg" : "");
+    const dica = `${DIAS_SEM[x.w]} ${dataTxt(x)}: ${x.fechado ? "loja fechada" : conta[i] + " pessoas trabalhando"}${n ? `, ${n} ${n === 1 ? "coisa" : "coisas"} para arrumar` : ""}`;
+    return `<a class="mb ${cls}${n ? " tem-erro" : ""}" href="#/dia" data-dia="${i}" style="--h:${x.fechado ? 100 : Math.max(6, Math.round((conta[i] / max) * 100))}%;--i:${i}" title="${esc(dica)}" aria-label="${esc(dica)}"><span class="mb-v">${x.fechado ? "" : conta[i]}</span></a>`;
+  }).join("");
+  const rotulos = E.dias.map((x, i) => `<span class="${x.w === 0 ? "dom" : ""}${i > 0 && x.w === 1 ? " seg" : ""}">${i === 0 || x.w === 1 ? x.d : ""}</span>`).join("");
+  return `<div class="mes" style="--n:${E.dias.length}">
+    <div class="mes-cab"><b>Pessoas trabalhando em cada dia</b><span class="mes-leg"><i class="l-util"></i>dia útil<i class="l-dom"></i>domingo<i class="l-err"></i>tem coisa para arrumar</span></div>
+    <div class="mes-barras">${barras}</div>
+    <div class="mes-dias">${rotulos}</div>
+  </div>`;
+}
+
 /* ================= INÍCIO ================= */
 function telaInicio(c) {
   const v = VAL, lancada = travada();
   const pessoas = E.pessoas.filter((p) => !p.fora).length;
   const fer = (E.feriados || []).filter((f) => !f.fechado);
   c.innerHTML = `${faixaAlertas()}
-  <section class="cartao">
-    <div class="linha" style="justify-content:space-between;align-items:flex-start">
-      <div><h1>Escala de ${esc(mesTxt(ESC.mes))}</h1><p class="dica" style="margin:0">${esc(ESC.loja_nome)} · escala 5x2 · ${pessoas} pessoas</p></div>
-      ${lancada ? `<span class="status lancada">${ic("check")} Lançada</span>` : `<span class="status rascunho">Ainda não lançada</span>`}
+  <section class="cartao hero">
+    <div class="hero-topo">
+      <div><h1 class="hero-titulo">Escala de ${esc(mesTxt(ESC.mes))}</h1><p class="hero-sub">${esc(ESC.loja_nome)}, escala 5x2 com ${pessoas} pessoas</p></div>
+      ${lancada ? `<span class="estado-g ok">${ic("cadeado")} Lançada</span>` : v.erros.length ? `<a class="estado-g erro" href="#/avisos"><span class="bol-erro">${v.erros.length}</span> ${v.erros.length === 1 ? "coisa para arrumar" : "coisas para arrumar"}</a>` : `<span class="estado-g pronto">${ic("check")} Pronta para lançar</span>`}
     </div>
-    ${lancada ? `<div class="faixa ok" style="margin-top:14px">${ic("cadeado")}<div>Lançada a escala <b>"${esc(nomeAberta())}"</b> em ${esc(quando(ESC.lancada_em))} por ${esc(ESC.lancada_por || "")}. Para mudar alguma coisa, reabra.</div><span class="espaco"></span><button class="btn" id="reabrir">Reabrir para mudar</button></div>`
-      : `<div class="faixa ${SUJO ? "erro" : ABERTA ? "ok" : "aviso"}" style="margin-top:14px"><div>Aberta agora: <b>${esc(nomeAberta())}</b>${!ABERTA ? (SUJO ? ". Você mexeu e ainda não salvou: toque em Salvar e dê um nome." : ". Ela é fixa: se mexer, vira uma escala sua e se salva sozinha.") : ". As mudanças se salvam sozinhas."}</div>${SUJO ? `<span class="espaco"></span><button class="btn primario" id="salvarJa">Salvar com nome</button>` : ""}</div>`}
+    ${lancada ? `<div class="faixa-fina ok">${ic("cadeado")}<span>Lançada a escala <b>"${esc(nomeAberta())}"</b> em ${esc(quando(ESC.lancada_em))} por ${esc(ESC.lancada_por || "")}.</span><button class="link-fino" id="reabrir">Reabrir para mudar</button></div>`
+      : `<div class="faixa-fina ${SUJO ? "erro" : "neutra"}"><span>Aberta agora: <b>${esc(nomeAberta())}</b>${!ABERTA ? (SUJO ? ". Você mexeu e ainda não salvou." : ". Ela é fixa: se mexer, vira uma escala sua e se salva sozinha.") : ". As mudanças se salvam sozinhas."}</span>${SUJO ? `<button class="link-fino" id="salvarJa">Salvar com nome</button>` : ""}</div>`}
+    ${mesEmBarras()}
     <div class="numeros">
-      <div class="numero ${v.erros.length ? "vermelho" : "verde"}"><b>${v.erros.length}</b><span>${v.erros.length === 1 ? "coisa para arrumar" : "coisas para arrumar"}</span></div>
-      <div class="numero ${v.cobertura.length ? "vermelho" : "verde"}"><b>${v.cobertura.length}</b><span>horários sem operadora, açougue, padaria ou fiscal</span></div>
-      <div class="numero ${v.avisos.length ? "amarelo" : ""}"><b>${v.avisos.length}</b><span>avisos (pode lançar assim)</span></div>
+      <div class="numero ${v.erros.length ? "vermelho" : "verde"}"><b data-conta="${v.erros.length}">${v.erros.length}</b><span>${v.erros.length === 1 ? "coisa para arrumar" : "coisas para arrumar"}</span></div>
+      <div class="numero ${v.cobertura.length ? "vermelho" : "verde"}"><b data-conta="${v.cobertura.length}">${v.cobertura.length}</b><span>horários sem operadora, açougue, padaria ou fiscal</span></div>
+      <div class="numero ${v.avisos.length ? "amarelo" : ""}"><b data-conta="${v.avisos.length}">${v.avisos.length}</b><span>avisos (pode lançar assim)</span></div>
     </div>
     <div class="linha">
       <a class="btn primario grande" href="#/escala">Ver e mexer na escala</a>
       ${lancada ? "" : `<button class="btn laranja grande" id="lancar">${ic("check")} Lançar "${esc(nomeAberta())}"</button>`}
-      ${v.erros.length && !lancada ? `<a class="btn" href="#/avisos">Ver o que arrumar</a>` : ""}
+      ${v.erros.length && !lancada ? `<a class="btn grande" href="#/avisos">Ver o que arrumar</a>` : ""}
     </div>
   </section>
   ${cartaoCobertura()}
@@ -572,7 +604,7 @@ function telaInicio(c) {
         <td class="mini">${esc(x.atualizado_por || x.criado_por || "")} · ${esc(quando(x.atualizado_em))}</td>
         <td style="text-align:right;white-space:nowrap">${lancada ? "" : `${ABERTA && ABERTA.id === x.id ? "" : `<button class="btn" data-abrir="${esc(x.id)}">Abrir</button> `}<button class="btn" data-renomear="${esc(x.id)}">Renomear</button> <button class="btn perigo" data-apagar="${esc(x.id)}">Apagar</button>`}</td></tr>`).join("")}
     </tbody></table>
-    ${!lancada ? `<div class="linha" style="margin-top:12px"><button class="btn" id="copiar">${ic("mais")} Salvar a aberta como uma escala nova</button></div>` : ""}
+    <div class="linha" style="margin-top:12px">${!lancada ? `<button class="btn" id="copiar">${ic("mais")} Salvar a aberta como uma escala nova</button>` : ""}<button class="btn" id="copiarMes">${ic("dir")} Copiar para outro mês</button></div>
   </section>
   <section class="cartao">
     <h2>Como funciona</h2>
@@ -591,11 +623,81 @@ function telaInicio(c) {
   const bl = $("#lancar"); if (bl) bl.onclick = confirmarLancar;
   const br = $("#reabrir"); if (br) br.onclick = confirmarReabrir;
   ligarHistorico(c);
+  $$(".mb[data-dia]", c).forEach((b) => b.addEventListener("click", () => { DIA_SEL = +b.dataset.dia; }));
   const sj = $("#salvarJa"); if (sj) sj.onclick = () => salvarComNome();
   const cp = $("#copiar"); if (cp) cp.onclick = () => salvarComNome(true);
+  const cm = $("#copiarMes"); if (cm) cm.onclick = copiarParaMes;
   $$("[data-abrir]", c).forEach((b) => (b.onclick = () => abrirVersao(b.dataset.abrir || null)));
   $$("[data-renomear]", c).forEach((b) => (b.onclick = () => renomearVersao(VERSOES.find((x) => x.id === b.dataset.renomear))));
   $$("[data-apagar]", c).forEach((b) => (b.onclick = () => apagarVersao(VERSOES.find((x) => x.id === b.dataset.apagar))));
+}
+
+/* ================= COPIAR A ESCALA PARA OUTRO MÊS =================
+   A escala aberta vira uma escala nova (com nome) no mês escolhido. Os dias casam pelo dia da semana
+   (1ª segunda com 1ª segunda...). Dia com a loja fechada fica como na padrão de lá; o horário se ajusta ao dia. */
+function mesesDaLoja() { return LISTA.filter((l) => l.loja_cod === ESC.loja_cod).sort((a, b) => String(a.mes).localeCompare(String(b.mes))); }
+function copiarParaMes() {
+  const meses = mesesDaLoja(), k = meses.findIndex((m) => m.id === ESC.id);
+  const outros = meses.filter((m) => m.id !== ESC.id);
+  if (!outros.length) { toast("Esta loja ainda não tem outro mês para copiar."); return; }
+  const rot = (m, j) => `${esc(mesTxt(m.mes))}${j === k - 1 ? " (mês anterior)" : j === k + 1 ? " (mês seguinte)" : ""}${m.status === "lancada" ? " · já lançada" : ""}`;
+  const ordem = [k - 1, k + 1].filter((j) => meses[j]).concat(meses.map((m, j) => j).filter((j) => j !== k && j !== k - 1 && j !== k + 1));
+  const origem = MESES[+String(ESC.mes).slice(5, 7) - 1];
+  const f = modal(`<h2>Copiar para outro mês</h2>
+    <p class="dica">A escala aberta (<b>${esc(nomeAberta())}</b>) vira uma escala nova no mês escolhido. A escala de lá continua como está.</p>
+    <div class="lista-meses" role="radiogroup" aria-label="Mês de destino">${ordem.map((j, n) => { const m = meses[j], trav = m.status === "lancada"; return `<label class="mes-opcao${trav ? " travado" : ""}"><input type="radio" name="destino" value="${esc(m.id)}" ${n === 0 && !trav ? "checked" : ""} ${trav ? "disabled" : ""}><span>${rot(m, j)}</span></label>`; }).join("")}</div>
+    <label class="campo" style="margin-top:12px"><span>Nome da cópia</span><input id="cNome" maxlength="60" value="Cópia de ${esc(origem)}"></label>
+    <p class="mini" style="margin:0">Os dias casam pelo dia da semana (1ª segunda com 1ª segunda, e assim por diante). Feriado com a loja fechada fica como na escala de lá. Confira as folgas depois de abrir.</p>`,
+  [{ rotulo: "Cancelar" }, { rotulo: "Copiar", tipo: "primario", fn: async (m) => {
+    const sel = $("input[name=destino]:checked", m); if (!sel) { toast("Escolha o mês."); return false; }
+    const nome = $("#cNome", m).value.trim(); if (!nome) { toast("Escreva o nome da cópia."); return false; }
+    const dest = meses.find((x) => x.id === sel.value);
+    const { data: row, error } = await SB.from("escalas").select("id,padrao,status").eq("id", dest.id).single();
+    if (error || !row) { toast("Não consegui abrir o outro mês: " + (error ? error.message : "")); return false; }
+    if (row.status === "lancada") { toast("A escala de lá já foi lançada. Reabra para copiar."); return false; }
+    const dados = montarCopia(sanear(row.padrao, row.padrao), E);
+    let nomeFinal = nome;
+    const { data: ja } = await SB.from("escalas_versoes").select("nome").eq("escala_id", dest.id);
+    for (let n = 2; (ja || []).some((v) => v.nome.toLowerCase() === nomeFinal.toLowerCase()); n++) nomeFinal = `${nome} (${n})`;
+    const { data: nova, error: e2 } = await SB.from("escalas_versoes").insert({ escala_id: dest.id, nome: nomeFinal, dados }).select("id").single();
+    if (e2) { toast("Não consegui copiar: " + e2.message); return false; }
+    toast(`Copiada para ${mesTxt(dest.mes)} como "${nomeFinal}".`, { rotulo: "Abrir", fn: async () => { if (await podeSairDoPadrao()) abrirEscala(dest.id, nova.id); } });
+    if (window.festa) festa();
+  } }]);
+  return f;
+}
+/* monta a escala do mês de destino (D = padrão de lá) com o que está na escala aberta (S) */
+function montarCopia(D, S) {
+  // posição de cada dia no mês: "1ª segunda", "2ª segunda"...
+  const ordemDia = (dias) => { const vistos = {}; return dias.map((x) => (vistos[x.w] = (vistos[x.w] || 0) + 1)); };
+  const oS = ordemDia(S.dias), oD = ordemDia(D.dias);
+  const deOnde = D.dias.map((x, j) => { let i = S.dias.findIndex((y, k) => y.w === x.w && oS[k] === oD[j]); if (i < 0) for (let k = S.dias.length - 1; k >= 0; k--) if (S.dias[k].w === x.w) { i = k; break; } return i; });
+  const mesmo = (a, b) => a.id === b.id || (a.chave != null && a.chave === b.chave);
+  const E0 = E; E = D;   // ajustarParaDia usa os dias do mês aberto: aponta para o mês de destino enquanto copia
+  try {
+    const pessoas = [];
+    S.pessoas.forEach((p) => {
+      const q = D.pessoas.find((x) => mesmo(x, p));
+      const nova = clone(q || p);
+      ["nome", "nomeCompleto", "setor", "horas", "turno", "saidaMax", "entradaMin", "semDomingo", "semFeriado", "subGerente", "vaga", "diarista", "inicio", "fora"].forEach((k) => { if (p[k] !== undefined) nova[k] = clone(p[k]); else delete nova[k]; });
+      nova.dias = D.dias.map((x, j) => {
+        const i = deOnde[j], c = i >= 0 ? p.dias[i] : null;
+        if (x.fechado) return q ? clone(q.dias[j]) : { t: "X" };
+        if (!c) return q ? clone(q.dias[j]) : { t: p.diarista ? "L" : "F" };
+        if (c.t === "X") return q ? clone(q.dias[j]) : { t: "F" };
+        if (c.t === "T") return ajustarParaDia(c, j, nova);
+        if (c.t === "D" && x.w !== 0) return { t: "F" };
+        if (c.t === "F" && x.w === 0) return { t: "D" };
+        return clone(c);
+      });
+      pessoas.push(nova);
+    });
+    // quem está no mês de destino e não estava na escala copiada continua como na padrão de lá
+    D.pessoas.forEach((q) => { if (!pessoas.some((x) => mesmo(x, q))) pessoas.push(clone(q)); });
+    D.pessoas = pessoas;
+    D.turnos = clone(S.turnos || D.turnos || {});
+    return D;
+  } finally { E = E0; }
 }
 
 /* ================= LANÇAR / REABRIR ================= */
@@ -618,7 +720,7 @@ async function confirmarLancar() {
   [{ rotulo: "Cancelar" }, { rotulo: "Lançar", tipo: "laranja", fn: async () => {
     const { error } = await SB.rpc("escala_lancar", { p_id: ESC.id, p_versao: ABERTA ? ABERTA.id : null });
     if (error) { toast("Não consegui lançar: " + error.message); return false; }
-    await abrirEscala(ESC.id); RESUMO = null; toast("Escala lançada.");
+    await abrirEscala(ESC.id); RESUMO = null; toast("Escala lançada."); if (window.festa) festa();
   } }]);
 }
 function confirmarReabrir() {
@@ -785,41 +887,63 @@ function ligarArrastar(c) {
     moverPessoa(id, alvo.dataset.linha, e.key === "ArrowDown");
     const nova = $(`.alca[data-mover="${CSS.escape(id)}"]`); if (nova) nova.focus();
   }));
-  // arrastar com mouse ou dedo
+  // arrastar com mouse ou dedo: a linha "levanta", vira um cartão que segue o dedo com mola,
+  // os vizinhos abrem espaço e, ao soltar, o cartão encaixa no lugar novo
+  const calmo = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const vibrar = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (er) {} };
   $$(".alca", grade).forEach((a) => (a.onpointerdown = (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
     const id = a.dataset.mover, linha = a.closest("tr"), vs = vizinhos(id), p = pessoa(id);
-    linha.classList.add("arrastando"); document.body.classList.add("movendo");
-    // cartão que segue o dedo/mouse
+    const nomeTd = linha.querySelector("td.nome"), rNome = nomeTd.getBoundingClientRect(), rLinha = linha.getBoundingClientRect(), rGrade = grade.getBoundingClientRect();
+    // cartão: nome + os primeiros dias da escala da pessoa
     const fan = document.createElement("div");
-    fan.className = "fantasma";
-    fan.innerHTML = `${ic("arrastar")}<div><b>${esc(p.nome)}</b><small>${esc(p.setor)} · solte onde quiser</small></div>`;
+    fan.className = "fantasma2";
+    const dias = [...linha.querySelectorAll(".cel")].slice(0, 9).map((cel) => { const k = cel.cloneNode(true); k.classList.remove("tem-erro", "tem-aviso", "mudou"); return k.outerHTML; }).join("");
+    fan.innerHTML = `<span class="f-alca">${ic("arrastar")}</span><div class="f-nome"><b>${esc(p.nome)}</b><small>${esc(p.setor)}, solte onde quiser</small></div><div class="f-dias">${dias}</div>`;
+    fan.style.width = Math.min(rGrade.width - 8, 620) + "px";
     document.body.appendChild(fan);
-    const seguir = (ev) => { fan.style.transform = `translate(${ev.clientX + 14}px, ${ev.clientY - 22}px) rotate(-2deg)`; };
-    seguir(e);
-    // as outras linhas deslizam para abrir espaço (anima a troca de lugar)
+    const pegaY = e.clientY - rLinha.top;           // onde o dedo pegou dentro da linha
+    const x0 = rNome.left;                           // o cartão anda só na vertical (com um leve balanço)
+    let alvoY = rLinha.top, y = rLinha.top, vy = 0, xBal = 0, ultimoY = e.clientY, vel = 0, vivo = true, ptrY = e.clientY;
+    const desenhar = () => {
+      if (!vivo) return;
+      if (calmo) { y = alvoY; } else { const forca = (alvoY - y) * 0.32; vy = (vy + forca) * 0.62; y += vy; }
+      vel = vel * 0.8 + (ptrY - ultimoY) * 0.2; ultimoY = ptrY;
+      const inclina = calmo ? 0 : Math.max(-4, Math.min(4, vel * 0.35));
+      xBal = calmo ? 0 : xBal * 0.85 + inclina * 0.6;
+      fan.style.transform = `translate(${x0 + xBal}px, ${y}px) rotate(${inclina}deg) scale(1.03)`;
+      // rolar a página perto das bordas, mais rápido quanto mais perto
+      const borda = 80;
+      if (ptrY < borda) window.scrollBy(0, -Math.ceil((borda - ptrY) / 6));
+      else if (ptrY > innerHeight - borda) window.scrollBy(0, Math.ceil((ptrY - (innerHeight - borda)) / 6));
+      requestAnimationFrame(desenhar);
+    };
+    fan.style.transform = `translate(${x0}px, ${y}px)`;
+    requestAnimationFrame(() => { fan.classList.add("no-ar"); desenhar(); });
+    linha.classList.add("arrastando"); document.body.classList.add("movendo");
+    vibrar(12);
+    // os vizinhos deslizam com mola para abrir espaço
     const deslizar = (mexer) => {
       const antes = new Map(vs.map((t) => [t, t.getBoundingClientRect().top]));
       mexer();
+      vibrar(6);
+      if (calmo) return;
       vs.forEach((t) => { if (t === linha) return; const d = antes.get(t) - t.getBoundingClientRect().top; if (!d) return;
         t.style.transition = "none"; t.style.transform = `translateY(${d}px)`;
-        requestAnimationFrame(() => { t.style.transition = "transform .18s ease"; t.style.transform = ""; }); });
+        requestAnimationFrame(() => requestAnimationFrame(() => { t.style.transition = "transform .26s cubic-bezier(.2,.9,.25,1.2)"; t.style.transform = ""; })); });
     };
     const mover = (ev) => {
-      seguir(ev);
+      ptrY = ev.clientY; alvoY = ev.clientY - pegaY;
       const tr = vs.find((t) => { if (t === linha) return false; const r = t.getBoundingClientRect(); return ev.clientY >= r.top && ev.clientY < r.bottom; });
       if (tr) {
         const r = tr.getBoundingClientRect(), depois = ev.clientY > r.top + r.height / 2;
         const certo = depois ? tr.nextElementSibling === linha : tr.previousElementSibling === linha;
         if (!certo) deslizar(() => tr.parentNode.insertBefore(linha, depois ? tr.nextSibling : tr));
       }
-      // rolar a página quando chega perto da borda
-      if (ev.clientY < 70) window.scrollBy(0, -14); else if (ev.clientY > window.innerHeight - 50) window.scrollBy(0, 14);
     };
-    const soltar = () => {
-      document.removeEventListener("pointermove", mover); document.removeEventListener("pointerup", soltar); document.removeEventListener("pointercancel", soltar);
-      fan.remove(); document.body.classList.remove("movendo"); linha.classList.remove("arrastando");
+    const terminar = () => {
+      vivo = false; fan.remove(); document.body.classList.remove("movendo"); linha.classList.remove("arrastando");
       vs.forEach((t) => { t.style.transition = ""; t.style.transform = ""; });
       // onde ela ficou na tela vira a nova ordem
       const ordem = [...grade.querySelectorAll("tr[data-linha]")].filter((t) => vs.includes(t)), k = ordem.indexOf(linha);
@@ -828,6 +952,16 @@ function ligarArrastar(c) {
       if (nova === vs.map((t) => t.dataset.linha).join("|") || k < 0) { render(); return; }
       if (ordem[k + 1]) moverPessoa(id, ordem[k + 1].dataset.linha, false); else moverPessoa(id, ordem[k - 1].dataset.linha, true);
       if (antesNoBanco === E.pessoas.filter((q) => q.setor === p.setor).map((q) => q.id).join("|")) render();
+    };
+    const soltar = () => {
+      document.removeEventListener("pointermove", mover); document.removeEventListener("pointerup", soltar); document.removeEventListener("pointercancel", soltar);
+      if (calmo) { terminar(); return; }
+      // o cartão voa até o espaço e encaixa
+      vivo = false;
+      const r = linha.getBoundingClientRect();
+      fan.classList.remove("no-ar"); fan.classList.add("pousa");
+      fan.style.transform = `translate(${x0}px, ${r.top}px) rotate(0deg) scale(1)`;
+      setTimeout(terminar, 190);
     };
     document.addEventListener("pointermove", mover); document.addEventListener("pointerup", soltar); document.addEventListener("pointercancel", soltar);
   }));
@@ -862,6 +996,65 @@ function ligarHora(el, atual, fn, podeVazio) {
     fn(n);
   };
 }
+/* ================= TURNOS POR FUNÇÃO (setor) =================
+   Cada setor tem seus turnos cadastrados (nome, entrada, saída, intervalo). No editor do dia, um toque preenche o horário. */
+const turnosDe = (setor) => ((E.turnos || {})[setor] || []);
+const mesmoHorario = (a, b) => a && b && a.ini === b.ini && a.fim === b.fim && JSON.stringify(a.alm || null) === JSON.stringify(b.alm || null);
+const txtTurno = (t) => `${hm(t.ini)} às ${hm(t.fim)}${t.alm ? `, intervalo ${hm(t.alm[0])}` : ""}`;
+function nomeTurnoSugerido(ini) { return ini < 600 ? "Abertura" : ini < 690 ? "Manhã" : ini < 780 ? "Intermediário" : ini < 900 ? "Tarde" : "Fechamento"; }
+/* horários que o setor mais usa na escala (para sugerir mesmo sem cadastro) */
+function horariosMaisUsados(setor) {
+  const conta = new Map();
+  E.pessoas.forEach((q) => { if (q.fora || q.setor !== setor) return; q.dias.forEach((c) => { if (c.t !== "T") return; const k = `${c.ini}-${c.fim}-${c.alm ? c.alm.join("/") : ""}`; const v = conta.get(k) || { c, n: 0 }; v.n++; conta.set(k, v); }); });
+  const cad = turnosDe(setor);
+  return [...conta.values()].filter((v) => v.n >= 3 && !cad.some((t) => mesmoHorario(t, v.c))).sort((a, b) => b.n - a.n).slice(0, 3).map((v) => ({ ini: v.c.ini, fim: v.c.fim, alm: v.c.alm ? [...v.c.alm] : null, n: v.n }));
+}
+/* turno novo: formulário curto já preenchido com o horário da tela (dá para trocar tudo) */
+function guardarTurno(setor, h, depois) {
+  h = h && h.t === "T" ? h : { ini: 480, fim: 1104, alm: [720, 840] };
+  const v = (m) => (m == null ? "" : hm(m));
+  const f = modal(`<h2>Novo turno de ${esc(setor)}</h2>
+    <p class="dica">Depois é só tocar no turno para usar esse horário em qualquer pessoa do setor.</p>
+    <label class="campo"><span>Nome do turno</span><input id="tNome" maxlength="30" value="${esc(nomeTurnoSugerido(h.ini))}" placeholder="ex.: Manhã, Tarde, Fechamento"></label>
+    <div class="horarios">
+      <label class="campo"><span>Entrada</span><input id="tIni" class="hora" inputmode="numeric" maxlength="6" placeholder="--:--" value="${v(h.ini)}"></label>
+      <label class="campo"><span>Saída</span><input id="tFim" class="hora" inputmode="numeric" maxlength="6" placeholder="--:--" value="${v(h.fim)}"></label>
+      <label class="campo"><span>Intervalo começa</span><input id="tAlm" class="hora" inputmode="numeric" maxlength="6" placeholder="--:--" value="${v(h.alm && h.alm[0])}"></label>
+      <label class="campo"><span>Intervalo termina</span><input id="tAlmFim" class="hora" inputmode="numeric" maxlength="6" placeholder="--:--" value="${v(h.alm && h.alm[1])}"></label>
+    </div>
+    <p class="mini" id="tResumo" style="margin:0"></p>`,
+  [{ rotulo: "Cancelar" }, { rotulo: "Guardar turno", tipo: "primario", fn: (m) => {
+    const nome = $("#tNome", m).value.trim(); if (!nome) { toast("Escreva o nome do turno."); return false; }
+    if (turnosDe(setor).some((t) => t.nome.toLowerCase() === nome.toLowerCase())) { toast("Já tem um turno com esse nome neste setor."); return false; }
+    const t = lerTurno(m); if (!t) return false;
+    alterar(() => { E.turnos = E.turnos || {}; (E.turnos[setor] = E.turnos[setor] || []).push({ id: "t" + Date.now().toString(36), nome, ...t }); }, `Turno "${nome}" guardado em ${setor}.`);
+    if (depois) depois();
+  } }]);
+  // resumo ao vivo: quantas horas o turno tem
+  const resumo = () => { const t = lerTurno(f, true); $("#tResumo", f).textContent = t ? `Trabalha ${horasTxt(trabDe({ t: "T", ...t }))}${t.alm ? `, com intervalo de ${horasTxt(t.alm[1] - t.alm[0])}` : ", sem intervalo"}.` : "Confira os horários."; };
+  $$("input.hora", f).forEach((i) => {
+    i.oninput = () => { i.value = i.value.replace(/[^\d:h]/gi, ""); resumo(); };
+    i.onblur = () => { const n = i.value.trim() ? lerHora(i.value) : null; if (n != null && !Number.isNaN(n)) i.value = hm(n); };   // 1330 vira 13:30
+  });
+  resumo();
+  setTimeout(() => { const i = $("#tNome", f); if (i) { i.focus(); i.select(); } }, 50);
+}
+function lerTurno(m, quieto) {
+  const ler = (id) => { const s = $(id, m).value.trim(); return s ? lerHora(s) : null; };
+  const ini = ler("#tIni"); let fim = ler("#tFim"); const a = ler("#tAlm"), b = ler("#tAlmFim");
+  const erro = (msg) => { if (!quieto) toast(msg); return null; };
+  if (ini == null || fim == null || Number.isNaN(ini) || Number.isNaN(fim)) return erro("Confira a entrada e a saída.");
+  if (fim <= ini) fim += 1440;
+  if (Number.isNaN(a) || Number.isNaN(b) || (a == null) !== (b == null)) return erro("Confira o intervalo (ou deixe os dois em branco).");
+  const alm = a == null ? null : [a, b];
+  if (alm && !(alm[0] > ini && alm[1] > alm[0] && alm[1] < fim)) return erro("O intervalo precisa ficar entre a entrada e a saída.");
+  return { ini, fim, alm };
+}
+function apagarTurno(setor, id, depois) {
+  const t = turnosDe(setor).find((x) => x.id === id); if (!t) return;
+  alterar(() => { E.turnos[setor] = turnosDe(setor).filter((x) => x.id !== id); if (!E.turnos[setor].length) delete E.turnos[setor]; }, `Turno "${t.nome}" apagado.`);
+  if (depois) depois();
+}
 const DUR_ALM = [[0, "sem intervalo"], [15, "15 min"], [45, "45 min"], [60, "1h"], [75, "1h15"], [90, "1h30"], [105, "1h45"], [120, "2h"]];
 function horarioSugerido(p, i) {
   const x = E.dias[i], o = padraoDe(p.id);
@@ -887,6 +1080,16 @@ function abrirCelula(pid, i) {
     return [];
   };
   const nTrab = (lista) => lista.length + 1;
+  let editandoTurnos = false;
+  const blocoTurnos = () => {
+    if (travar) return "";
+    const cad = turnosDe(p.setor), sug = horariosMaisUsados(p.setor);
+    const chip = (t, attr, extra) => `<button type="button" class="chip-turno${mesmoHorario(t, r) ? " sel" : ""}${extra || ""}" ${attr}><b>${esc(t.nome || "Mais usado")}</b><small>${esc(txtTurno(t))}</small>${editandoTurnos && t.id ? `<span class="x" data-del="${esc(t.id)}" aria-label="Apagar turno ${esc(t.nome)}">${ic("fechar")}</span>` : ""}</button>`;
+    return `<div class="turnos"><div class="turnos-tit"><b>Turnos de ${esc(p.setor)}</b>${cad.length ? `<button type="button" class="link-fino" id="tEditar">${editandoTurnos ? "Pronto" : "Editar"}</button>` : ""}</div>
+      <div class="turnos-chips">${cad.map((t) => chip(t, `data-turno="${esc(t.id)}"`)).join("")}${editandoTurnos ? "" : sug.map((t, k) => chip(t, `data-sug="${k}"`, " sugestao")).join("")}
+      ${editandoTurnos ? "" : `<button type="button" class="chip-turno novo" id="tNovo">${ic("mais")}<span>Novo turno</span></button>`}</div>
+      ${!cad.length ? `<p class="mini" style="margin:6px 0 0">${sug.length ? "Os horários acima são os mais usados no setor. " : ""}Guarde os turnos do setor para usar com um toque.</p>` : ""}</div>`;
+  };
   const desenhar = () => {
     const trab = trabDe(r), lim = limiteDia(p), alm = r.alm ? r.alm[1] - r.alm[0] : 0;
     const temp = clone(p); temp.dias[i] = r;
@@ -901,7 +1104,7 @@ function abrirCelula(pid, i) {
       ${r.t === "X" ? `<p>Feriado com a loja fechada: ninguém trabalha.</p>` : p.diarista ? `
       <div class="escolha"><button data-t="T" class="${r.t === "T" ? "sel" : ""}" ${travar ? "disabled" : ""}>Vem trabalhar</button><button data-t="L" class="${r.t !== "T" ? "sel" : ""}" ${travar ? "disabled" : ""}>Não vem</button></div>
       ${r.t !== "T" ? `<p class="dica">Diarista: toque em "Vem trabalhar" para cobrir este dia.</p>` : ""}
-      ${r.t === "T" ? `
+      ${r.t === "T" ? `${blocoTurnos()}
         <div class="horarios">
           <label class="campo"><span>Entrada</span>${campoHora("hIni", r.ini, travar)}</label>
           <label class="campo"><span>Saída</span>${campoHora("hFim", r.fim, travar)}</label>
@@ -918,7 +1121,7 @@ function abrirCelula(pid, i) {
       <div class="escolha"><button data-t="T" class="${r.t === "T" ? "sel" : ""}" ${travar ? "disabled" : ""}>Trabalha</button><button data-t="F" class="${r.t === "F" || r.t === "D" ? "sel" : ""}" ${travar ? "disabled" : ""}>Folga</button><button data-t="A" class="${r.t === "A" ? "sel" : ""}" ${travar ? "disabled" : ""}>Afastado</button><button data-t="V" class="${r.t === "V" ? "sel" : ""}" ${travar ? "disabled" : ""}>Férias</button></div>
       ${r.t === "N" ? `<p class="dica">Vaga: a pessoa ainda não entrou neste dia${p.inicio ? ` (começa em ${isoBr(p.inicio)})` : ""}. Para mudar o dia de início, toque no nome da vaga.</p>` : ""}
       ${r.t === "A" || r.t === "V" ? `<p class="dica">${r.t === "A" ? "Afastado (atestado, INSS, licença ou saiu da empresa)" : "Férias"}: não conta como folga. Se o setor ficar descoberto, veja em "O que arrumar".</p>` : ""}
-      ${r.t === "T" ? `
+      ${r.t === "T" ? `${blocoTurnos()}
         <div class="horarios">
           <label class="campo"><span>Entrada</span>${campoHora("hIni", r.ini, travar)}</label>
           <label class="campo"><span>Saída</span>${campoHora("hFim", r.fim, travar)}</label>
@@ -949,6 +1152,12 @@ function abrirCelula(pid, i) {
     ligarHora(g("#hFim"), r.fim, (n) => { r.fim = n <= r.ini ? n + 1440 : n; desenhar(); });
     ligarHora(g("#hAlm"), r.alm ? r.alm[0] : null, (n) => { if (n == null) r.alm = null; else { const d = r.alm ? r.alm[1] - r.alm[0] : 60; r.alm = [n, n + d]; } desenhar(); }, true);
     ligarHora(g("#hAlmFim"), r.alm ? r.alm[1] : null, (n) => { if (n == null) r.alm = null; else if (r.alm) r.alm = [r.alm[0], n]; else r.alm = [Math.max(r.ini, n - 60), n]; desenhar(); }, true);
+    $$("[data-turno]", pn).forEach((b) => (b.onclick = (ev) => { if (ev.target.closest("[data-del]")) return; const t = turnosDe(p.setor).find((x) => x.id === b.dataset.turno); if (t) { r = { t: "T", ini: t.ini, fim: t.fim, alm: t.alm ? [...t.alm] : null }; desenhar(); } }));
+    const sugs = horariosMaisUsados(p.setor);
+    $$("[data-sug]", pn).forEach((b) => (b.onclick = () => { const t = sugs[+b.dataset.sug]; if (t) { r = { t: "T", ini: t.ini, fim: t.fim, alm: t.alm ? [...t.alm] : null }; desenhar(); } }));
+    $$("[data-del]", pn).forEach((b) => (b.onclick = (ev) => { ev.stopPropagation(); apagarTurno(p.setor, b.dataset.del, desenhar); }));
+    if (g("#tEditar")) g("#tEditar").onclick = () => { editandoTurnos = !editandoTurnos; desenhar(); };
+    if (g("#tNovo")) g("#tNovo").onclick = () => guardarTurno(p.setor, r, desenhar);
         if (g("#acertar")) g("#acertar").onclick = () => { r.fim = r.ini + limiteDia(p) + (r.alm ? r.alm[1] - r.alm[0] : 0); desenhar(); };
     $$("[data-alc]", pn).forEach((el) => (el.onchange = () => { alcance = el.checked ? el.dataset.alc : ""; desenhar(); }));
     $$("[data-j]", pn).forEach((b) => (b.onclick = () => {
@@ -1006,7 +1215,7 @@ function abrirPessoa(pid) {
     </div>` : ""}
     <div class="horarios">
       <label class="campo"><span>Setor</span><select id="pSetor" ${travar ? "disabled" : ""}>${setores.map((s) => `<option ${s === p.setor ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
-      ${p.diarista ? "" : `<label class="campo"><span>Horas por semana</span><select id="pHoras" ${travar ? "disabled" : ""}>${[42, 36, 30, 24, 20].map((h) => `<option value="${h}" ${h === p.horas ? "selected" : ""}>${h}h</option>`).join("")}</select></label>`}
+      ${p.diarista ? "" : `<label class="campo"><span>Horas por semana</span><select id="pHoras" ${travar ? "disabled" : ""}>${[42, 40, 36, 30, 24, 20].map((h) => `<option value="${h}" ${h === p.horas ? "selected" : ""}>${h}h</option>`).join("")}</select></label>`}
     </div>
     ${p.setor !== "Gerência" ? `<label class="marcar"><input type="checkbox" id="pSub" ${p.subGerente ? "checked" : ""} ${travar ? "disabled" : ""}><span><b>Substitui o gerente</b>: pode abrir e fechar a loja quando não tiver gerente (conta para a regra de 1 gerente na abertura e 1 no fechamento).</span></label>` : ""}
     ${restr.length ? `<p class="dica"><b>Combinado:</b> ${restr.map(esc).join(" · ")}</p>` : ""}
@@ -1046,9 +1255,14 @@ function incluirPessoa(pre) {
     <p class="dica" id="nDica"></p>
     <label class="campo"><span id="nNomeRot">Nome</span><input id="nNome" placeholder="Nome e sobrenome" value="${esc(pre.nome || "")}"></label>
     <div class="horarios"><label class="campo"><span>Setor</span><select id="nSetor">${setores.map((s) => `<option ${s === setorPre ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
-    <label class="campo" id="nHorasC"><span>Horas por semana</span><select id="nHoras"><option value="42">42h</option><option value="30">30h</option><option value="24">24h</option></select></label></div>
-    <div class="horarios" id="nDiasC"><label class="campo"><span>Vem em</span><select id="nDiaW"><option value="">nenhum dia ainda (marco depois)</option>${[0, 1, 2, 3, 4, 5, 6].map((w) => `<option value="${w}" ${w === 0 ? "selected" : ""}>todos os ${w === 0 || w === 6 ? DIAS_SEM[w] + "s" : DIAS_SEM[w] + "s-feiras"}</option>`).join("")}</select></label>
-    <label class="campo"><span>Horas no dia</span><select id="nHorasDia">${[[480, "8h"], [360, "6h"], [240, "4h"]].map(([m, t]) => `<option value="${m}">${t}</option>`).join("")}</select></label></div>
+    <label class="campo" id="nHorasC"><span>Horas por semana</span><select id="nHoras">${horaCheia() === 40 ? `<option value="40">40h</option>` : `<option value="42">42h</option>`}<option value="30">30h</option><option value="24">24h</option></select></label></div>
+    <div id="nDiasC">
+      <div class="campo"><span class="cal-rot">Dias em que vem <b id="nDiasN">nenhum dia marcado</b></span>
+        <div class="cal-dia" role="group" aria-label="Dias do mês em que o diarista vem">${LETRA.map((l, w) => `<em class="${w === 0 ? "dom" : ""}">${l}</em>`).join("")}${"<i></i>".repeat(E.dias[0].w)}${E.dias.map((x, k) => `<button type="button" data-k="${k}" class="${x.w === 0 ? "dom" : ""}" ${x.fechado ? "disabled" : ""} aria-pressed="false" aria-label="${DIAS_SEM[x.w]} ${dataTxt(x)}${x.fechado ? ", loja fechada" : ""}">${x.d}</button>`).join("")}</div>
+        <div class="cal-atalhos"><button type="button" class="btn" data-w="0">Todos os domingos</button><button type="button" class="btn" data-w="6">Todos os sábados</button><button type="button" class="btn" data-limpar>Limpar</button></div>
+      </div>
+      <label class="campo"><span>Horas no dia</span><select id="nHorasDia">${[[480, "8h"], [360, "6h"], [240, "4h"]].map(([m, t]) => `<option value="${m}">${t}</option>`).join("")}</select></label>
+    </div>
     <div class="horarios"><label class="campo"><span>Entrada de costume</span><select id="nIni">${opcoesHora(495, 300, 1320)}</select></label>
     <label class="campo" id="nFixaC"><span>Folga fixa</span><select id="nFixa"><option value="">Igual à de um colega do setor</option>${[1, 2, 3, 4, 5].map((w) => `<option value="${w}">${DIAS_SEM[w]}</option>`).join("")}</select></label></div>
     <label class="campo" id="nInicioC"><span>Começa no dia</span><select id="nInicio">${E.dias.map((x, k) => `<option value="${x.iso}">${DIAS_CURTO[x.w]} ${dataTxt(x)}${k === 0 ? " (mês todo)" : ""}</option>`).join("")}</select></label>`,
@@ -1056,12 +1270,13 @@ function incluirPessoa(pre) {
     const ehVaga = !!$("#nTipo [data-tipo='v'].sel", m), ehDia = !!$("#nTipo [data-tipo='d'].sel", m);
     const setor = $("#nSetor", m).value, horas = +$("#nHoras", m).value, ini = +$("#nIni", m).value, fixa = $("#nFixa", m).value;
     if (ehDia) {
-      // diarista: começa sem dias; se escolheu um dia da semana, já vem em todos esses dias do mês
+      // diarista: vem só nos dias marcados no calendário (pode ser um dia só, ou nenhum e marca depois)
       const nome = $("#nNome", m).value.trim() || proximoNomeDiarista(setor);
-      const w = $("#nDiaW", m).value, dur = +$("#nHorasDia", m).value, alm = dur > 360 ? 60 : dur > 240 ? 15 : 0;
+      const marcados = new Set($$(".cal-dia button.sel", m).map((b) => +b.dataset.k));
+      const dur = +$("#nHorasDia", m).value, alm = dur > 360 ? 60 : dur > 240 ? 15 : 0;
       const nd = { id: "d" + Date.now().toString(36), nome, nomeCompleto: nome, cargo: "Diarista", setor, horas: 42, novo: true, diarista: true, entradaAtual: null, turno: null, saidaMax: null, entradaMin: null, semDomingo: false, semFeriado: false, dias: [] };
-      nd.dias = E.dias.map((x) => {
-        if (w === "" || x.w !== +w || x.fechado) return { t: "L" };
+      nd.dias = E.dias.map((x, k) => {
+        if (!marcados.has(k) || x.fechado) return { t: "L" };
         let d = montarDia(ini, ini + dur + alm, null, alm);
         d = ajustarParaDia(d, E.dias.indexOf(x), nd);
         return d;
@@ -1112,6 +1327,21 @@ function incluirPessoa(pre) {
     };
     $$("#nTipo [data-tipo]", f).forEach((b) => (b.onclick = () => { $$("#nTipo [data-tipo]", f).forEach((o) => o.classList.toggle("sel", o === b)); ajustar(); }));
     $("#nSetor", f).onchange = ajustar;
+    // calendário do diarista: toca no dia para marcar ou desmarcar
+    const botoesDia = $$(".cal-dia button[data-k]", f);
+    const contar = () => {
+      const n = botoesDia.filter((b) => b.classList.contains("sel")).length;
+      $("#nDiasN", f).textContent = n ? `${n} ${n === 1 ? "dia marcado" : "dias marcados"}` : "nenhum dia marcado";
+    };
+    const marcar = (b, on) => { b.classList.toggle("sel", on); b.setAttribute("aria-pressed", on ? "true" : "false"); };
+    botoesDia.forEach((b) => (b.onclick = () => { marcar(b, !b.classList.contains("sel")); contar(); }));
+    $$(".cal-atalhos [data-w]", f).forEach((a) => (a.onclick = () => {
+      const doDia = botoesDia.filter((b) => !b.disabled && E.dias[+b.dataset.k].w === +a.dataset.w);
+      const todos = doDia.length && doDia.every((b) => b.classList.contains("sel"));
+      doDia.forEach((b, j) => setTimeout(() => marcar(b, !todos), j * 40));
+      setTimeout(contar, doDia.length * 40 + 10);
+    }));
+    const lp = $(".cal-atalhos [data-limpar]", f); if (lp) lp.onclick = () => { botoesDia.forEach((b) => marcar(b, false)); contar(); };
     ajustar();
     const n = $("#nNome", f); if (n) n.focus();
   }, 50);
@@ -1371,7 +1601,16 @@ function telaMovimento(c) {
   </div></details>`;
   $$("[data-w]", c).forEach((b) => (b.onclick = () => { MOV.w = +b.dataset.w; telaMovimento(c); }));
   const ms = $("#movSetor", c); if (ms) ms.onchange = () => { MOV.setor = ms.value; telaMovimento(c); const d = $("#movMes", c); if (d) d.open = true; };
+  // Dia a dia (quem está na loja em cada hora), fechado até tocar
+  const det = document.createElement("details"); det.className = "abre dia-dentro"; det.id = "detDia";
+  det.innerHTML = `<summary>Dia a dia: quem está na loja em cada hora</summary><div id="diaDentro"></div>`;
+  c.appendChild(det);
+  const abrirDia = () => telaDia($("#diaDentro", det));
+  det.addEventListener("toggle", () => { DIA_ABERTO = det.open; if (det.open) abrirDia(); });
+  if (ABRIR_DIA) { ABRIR_DIA = false; det.open = true; setTimeout(() => det.scrollIntoView({ block: "start", behavior: "smooth" }), 60); }
+  else if (DIA_ABERTO) det.open = true;
 }
+let ABRIR_DIA = false, DIA_ABERTO = false;
 
 /* ================= O QUE ARRUMAR ================= */
 function telaAvisos(c) {
@@ -1425,7 +1664,7 @@ function telaAjuda(c) {
       <li><div><b>Vaga</b> (em "Incluir pessoa"): para quem ainda vai ser contratado. Entra na escala com horário, folga fixa e dia de início, aparece com o selo VAGA e conta na cobertura. Quando a pessoa entrar na Senior, o aviso dela tem o botão "Ocupar a vaga".</div></li>
       <li><div><b>Diarista</b> (em "Incluir pessoa"): pessoa de fora paga pelo dia, até 8h, para cobrir dias ou horários. Ex.: o gerente folga todo domingo; inclua um diarista na Gerência que vem todos os domingos e o erro de gerente na abertura/fechamento some. As regras da 5x2 não valem para diarista.</div></li>
       <li><div><b>Mesmo horário no mês todo:</b> ao mudar o horário de um dia, marque "Usar este horário em todos os dias de trabalho deste mês". As folgas não mudam.</div></li>
-      <li><div><b>"Dia a dia"</b> mostra quem está na loja em cada hora, setor por setor, e se o número de pessoas dá conta do movimento.</div></li>
+      <li><div><b>"Dia a dia"</b> (dentro de "Movimento e pessoas", no fim da página) mostra quem está na loja em cada hora, setor por setor, e se o número de pessoas dá conta do movimento.</div></li>
       <li><div><b>"O que arrumar"</b> lista o que quebra alguma regra. Tudo vermelho precisa ser arrumado antes de lançar. O amarelo é só aviso.</div></li>
       <li><div><b>"Lançar escala"</b> no Início. A escala fica travada e o escritório vê que a sua loja lançou. Para mudar depois, toque em "Reabrir".</div></li>
     </ol></section>
@@ -1437,7 +1676,7 @@ function telaAjuda(c) {
 function telaRegras(c) {
   const H = E.loja.horario, dom = E.loja.domingo;
   const horaTxt = (h) => (h ? `${h[0]} às ${h[1]}` : "fechada");
-  const combinados = E.pessoas.filter((p) => !p.fora).map((p) => ({ p, itens: [p.horas !== 42 && `${p.horas}h por semana`, p.entradaMin && `entra a partir das ${p.entradaMin}`, p.saidaMax && `sai até as ${p.saidaMax}`, p.semDomingo && "não trabalha domingo", p.semFeriado && "não trabalha feriado", p.turno && `turno da ${p.turno === "M" ? "manhã" : "tarde"}`].filter(Boolean) })).filter((x) => x.itens.length);
+  const combinados = E.pessoas.filter((p) => !p.fora).map((p) => ({ p, itens: [p.horas !== horaCheia() && `${p.horas}h por semana`, p.entradaMin && `entra a partir das ${p.entradaMin}`, p.saidaMax && `sai até as ${p.saidaMax}`, p.semDomingo && "não trabalha domingo", p.semFeriado && "não trabalha feriado", p.turno && `turno da ${p.turno === "M" ? "manhã" : "tarde"}`].filter(Boolean) })).filter((x) => x.itens.length);
   const bloco = (titulo, tag, itens) => `<section class="cartao regra"><div class="regra-topo"><h2>${titulo}</h2>${tag}</div><ul>${itens.map((t) => `<li>${t}</li>`).join("")}</ul></section>`;
   const t = { lei: `<span class="selo-regra lei">Lei</span>`, acordo: `<span class="selo-regra acordo">Acordo coletivo</span>`, emp: `<span class="selo-regra emp">Regra da empresa</span>` };
   c.innerHTML = `
