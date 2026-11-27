@@ -43,7 +43,7 @@
   /* ---------- formas (tudo branco, com toque de dourado) ---------- */
   const QTD = 0.4, TAM = 0.65, OPAC = 0.32; // bem discreto: poucos, pequenos e quase transparentes
   const BRANCO = [255, 255, 255], OURO = [255, 214, 120], GELO = [200, 225, 255];
-  const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  const rgba = (c, a) => `rgba(255,255,255,${a})`; // tudo branco (pedido do usuário: sem cor nos efeitos)
   function halo(g, x, y, r, cor, a) { const grd = g.createRadialGradient(x, y, 0, x, y, r); grd.addColorStop(0, rgba(cor, a)); grd.addColorStop(1, rgba(cor, 0)); g.fillStyle = grd; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill(); }
   function estrela4(g, s, cor, a) {
     g.fillStyle = rgba(cor, a);
@@ -67,16 +67,39 @@
     brilhos: { quantos: (w) => Math.min(80, 26 + w / 22), nova: (c, e) => ceu(c, e, 0.16), desenhar: desenhaCeu, cadente: true },
     natal: {
       quantos: (w) => Math.min(90, 30 + w / 20),
-      nova(c, e) { if (Math.random() < 0.25) return ceu(c, e, 0.6); return caindo(c, e, { r: sorte(0.8, 2.4), cor: BRANCO, tipo: Math.random() < 0.3 ? "floco" : "neve" }); },
+      // flocos, arvorezinhas e manjedouras voando devagar pela barra (da esquerda para a direita), com neve fininha caindo
+      // quase tudo pontinhos de neve; das figuras, no máximo uma de cada voando por vez
+      nova(c, e) {
+        const voando = (t) => c.ps.some((q) => q.tipo === t);
+        const faltam = ["floco", "arvore", "manjedoura"].filter((t) => !voando(t));
+        if (!faltam.length || Math.random() < 0.88) return caindo(c, e, { r: sorte(0.6, 1.4), cor: BRANCO, tipo: "neve" });
+        const tipo = um(faltam);
+        return { x: e ? Math.random() * c.w : -8, y: sorte(8, c.h - 8), vx: sorte(0.12, 0.32), vy: 0, r: tipo === "floco" ? sorte(2.6, 4) : sorte(5, 7), cor: BRANCO, tipo, dura: 9999, voa: true };
+      },
       desenhar(g, p, a) {
-        if (p.tipo === "estrela" || p.tipo === "ponto") return desenhaCeu(g, p, a);
         if (p.tipo === "neve") return ponto(g, p, a * 0.95);
-        g.save(); g.translate(p.x, p.y); g.rotate(p.fase * 0.2); g.strokeStyle = rgba(BRANCO, a); g.lineWidth = 1; g.lineCap = "round";
-        const s = p.r * 2.2; for (let k = 0; k < 6; k++) { g.rotate(Math.PI / 3); g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -s); g.moveTo(0, -s * 0.55); g.lineTo(s * 0.3, -s * 0.82); g.moveTo(0, -s * 0.55); g.lineTo(-s * 0.3, -s * 0.82); g.stroke(); }
+        const y = p.y + Math.sin(p.fase) * 2.5;   // balança de leve enquanto voa
+        g.save(); g.translate(p.x, y); g.rotate(Math.sin(p.fase * 0.7) * 0.15);
+        g.strokeStyle = rgba(BRANCO, a); g.fillStyle = rgba(BRANCO, a); g.lineWidth = 1; g.lineCap = "round"; g.lineJoin = "round";
+        const s = p.r;
+        if (p.tipo === "floco") {
+          g.rotate(p.fase * 0.2);
+          const t = s * 2.2; for (let k = 0; k < 6; k++) { g.rotate(Math.PI / 3); g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -t); g.moveTo(0, -t * 0.55); g.lineTo(t * 0.3, -t * 0.82); g.moveTo(0, -t * 0.55); g.lineTo(-t * 0.3, -t * 0.82); g.stroke(); }
+        } else if (p.tipo === "arvore") {
+          // três andares de pinheiro + tronco + estrelinha na ponta
+          [[-1.1, 0.55], [-0.35, 0.8], [0.4, 1.05]].forEach(([topo, larg]) => { g.beginPath(); g.moveTo(0, (topo - 0.55) * s); g.lineTo(larg * s, (topo + 0.45) * s); g.lineTo(-larg * s, (topo + 0.45) * s); g.closePath(); g.fill(); });
+          g.fillRect(-s * 0.16, s * 0.85, s * 0.32, s * 0.4);
+          g.save(); g.translate(0, -s * 1.85); estrela4(g, s * 0.22, BRANCO, a); g.restore();
+        } else {
+          // manjedoura: cocho com palha, pernas em X e a estrela em cima
+          g.beginPath(); g.moveTo(-s * 1.1, -s * 0.2); g.lineTo(s * 1.1, -s * 0.2); g.lineTo(s * 0.75, s * 0.45); g.lineTo(-s * 0.75, s * 0.45); g.closePath(); g.fill();
+          g.beginPath(); for (let k = -2; k <= 2; k++) { g.moveTo(k * s * 0.32, -s * 0.2); g.lineTo(k * s * 0.42, -s * 0.48); } g.stroke();
+          g.beginPath(); g.moveTo(-s * 0.7, s * 0.45); g.lineTo(-s * 0.15, s * 1.15); g.moveTo(-s * 0.15, s * 0.45); g.lineTo(-s * 0.7, s * 1.15); g.moveTo(s * 0.7, s * 0.45); g.lineTo(s * 0.15, s * 1.15); g.moveTo(s * 0.15, s * 0.45); g.lineTo(s * 0.7, s * 1.15); g.stroke();
+          g.save(); g.translate(0, -s * 1.3); halo(g, 0, 0, s * 0.9, BRANCO, a * 0.4); estrela4(g, s * 0.28, BRANCO, a); g.restore();
+        }
         g.restore(); },
-      some: (p, c) => p.dura > 5000 && p.y > c.h + 8,
+      some: (p, c) => (p.voa ? p.x > c.w + 12 : p.y > c.h + 8),
       cadente: true,
-      enfeite: () => `<div class="luzinhas">${Array.from({ length: 34 }, (_, k) => `<i style="--k:${k}"></i>`).join("")}</div>`,
     },
     anonovo: { quantos: (w) => Math.min(70, 24 + w / 26), nova: (c, e) => ceu(c, e, 0.25), desenhar: desenhaCeu, fogos: true, cadente: true },
     carnaval: {
@@ -113,7 +136,7 @@
       quantos: (w) => Math.min(60, 22 + w / 30),
       nova: (c, e) => subindo(c, e, { x: Math.random() * c.w, vy: -sorte(0.2, 0.5), r: sorte(0.7, 1.6), cor: um([BRANCO, OURO, [255, 190, 120]]), tipo: "faisca", dura: sorte(90, 200), vida0: true }),
       desenhar: (g, p, a) => ponto(g, p, a),
-      enfeite: () => { const cores = ["#f26522", "#fbb616", "#2e9f5a", "#3f86cf", "#d63384", "#8250c8"]; return `<div class="bandeirinhas"><svg viewBox="0 0 1000 24" preserveAspectRatio="none" aria-hidden="true"><path d="M0 2 Q500 16 1000 2" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1"/>${Array.from({ length: 40 }, (_, k) => { const x = 12 + k * 24.7, t = x / 1000, y = 2 + 4 * 14 * t * (1 - t); return `<g class="band" style="--k:${k};transform-origin:${x}px ${y}px"><path d="M${x - 7} ${y} L${x + 7} ${y} L${x + 7} ${y + 13} L${x} ${y + 9} L${x - 7} ${y + 13} Z" fill="${cores[k % cores.length]}"/></g>`; }).join("")}</svg></div>`; },
+      enfeite: () => { const cores = ["rgba(255,255,255,.95)", "rgba(255,255,255,.7)"]; return `<div class="bandeirinhas"><svg viewBox="0 0 1000 24" preserveAspectRatio="none" aria-hidden="true"><path d="M0 2 Q500 16 1000 2" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1"/>${Array.from({ length: 40 }, (_, k) => { const x = 12 + k * 24.7, t = x / 1000, y = 2 + 4 * 14 * t * (1 - t); return `<g class="band" style="--k:${k};transform-origin:${x}px ${y}px"><path d="M${x - 7} ${y} L${x + 7} ${y} L${x + 7} ${y + 13} L${x} ${y + 9} L${x - 7} ${y + 13} Z" fill="${cores[k % cores.length]}"/></g>`; }).join("")}</svg></div>`; },
     },
     criancas: {
       quantos: (w) => Math.min(30, 10 + w / 70),

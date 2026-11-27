@@ -487,7 +487,7 @@ function montarTopo() {
        <button class="btn-topo" id="btSalvar" title="Salvar">${ic("check")} Salvar</button>`;
   $("#topo").innerHTML = `<div class="marca"><span class="ponto"></span><span class="txt">Escalas das Lojas</span></div>
     ${ehAdmin() ? `<select class="loja-sel" id="lojaSel" aria-label="Loja"><option value="">Todas as lojas</option>${lojas.map((l) => `<option value="${esc(l.loja_cod)}" ${ESC && ESC.loja_cod === l.loja_cod ? "selected" : ""}>${esc(l.loja_nome)}</option>`).join("")}</select>` : ESC ? `<span class="loja-nome">${esc(ESC.loja_nome)}</span>` : ""}
-    ${ESC ? `<div class="mes-troca" role="group" aria-label="Mês da escala"><button type="button" id="mesAnt" ${kMes > 0 ? "" : "disabled"} title="${kMes > 0 ? "Ir para " + esc(mesTxt(meses[kMes - 1].mes)) : "A escala de " + vizMes(-1) + " ainda não foi criada"}" aria-label="Mês anterior">${ic("esq")}</button><span class="mes-nome">${esc(mesTxt(ESC.mes))}</span><button type="button" id="mesProx" ${kMes >= 0 && kMes < meses.length - 1 ? "" : "disabled"} title="${kMes >= 0 && kMes < meses.length - 1 ? "Ir para " + esc(mesTxt(meses[kMes + 1].mes)) : "A escala de " + vizMes(1) + " ainda não foi criada"}" aria-label="Próximo mês">${ic("dir")}</button></div>` : ""}
+    ${ESC ? `<div class="mes-troca" role="group" aria-label="Mês da escala"><button type="button" id="mesAnt" ${kMes > 0 ? "" : "disabled"} title="${kMes > 0 ? "Ir para " + esc(mesTxt(meses[kMes - 1].mes)) : "A escala de " + vizMes(-1) + " ainda não foi criada"}" aria-label="Mês anterior">${ic("esq")}</button><div class="ver-menu mes-menu" id="mesMenu"><button type="button" class="mes-nome" id="mesBtn" aria-haspopup="listbox" aria-expanded="false" title="Escolher o mês">${esc(mesTxt(ESC.mes))}${ic("baixo")}</button><div class="ver-lista mes-lista" role="listbox" hidden><p class="ver-titulo">Escolha o mês</p>${meses.map((m) => `<button type="button" role="option" aria-selected="${m.id === ESC.id}" class="ver-item${m.id === ESC.id ? " sel" : ""}" data-mesid="${esc(m.id)}"><span class="ver-txt"><b>${esc(mesTxt(m.mes))}</b></span>${m.status === "lancada" ? `<span class="ver-estado ok">${ic("check")} lançada</span>` : ""}</button>`).join("")}</div></div><button type="button" id="mesProx" ${kMes >= 0 && kMes < meses.length - 1 ? "" : "disabled"} title="${kMes >= 0 && kMes < meses.length - 1 ? "Ir para " + esc(mesTxt(meses[kMes + 1].mes)) : "A escala de " + vizMes(1) + " ainda não foi criada"}" aria-label="Próximo mês">${ic("dir")}</button></div>` : ""}
     ${seletorEscala}
     <span class="espaco"></span><span id="salvo" class="salvo"></span>
     <div class="tema-chave" role="group" aria-label="Aparência"><button data-tema="light" class="${tema === "light" ? "sel" : ""}" title="Claro" aria-label="Modo claro">${ic("sol")}</button><button data-tema="dark" class="${tema === "dark" ? "sel" : ""}" title="Escuro" aria-label="Modo escuro">${ic("lua")}</button></div>
@@ -501,6 +501,16 @@ function montarTopo() {
   const irMes = async (d) => { const alvo = meses[kMes + d]; if (!alvo || !(await podeSairDoPadrao())) return; abrirEscala(alvo.id); };
   const ma = $("#mesAnt"); if (ma) ma.onclick = () => irMes(-1);
   const mp = $("#mesProx"); if (mp) mp.onclick = () => irMes(1);
+  // tocar no nome do mês abre a lista de todos os meses
+  const mm = $("#mesMenu");
+  if (mm) {
+    const bt = $("#mesBtn", mm), li = $(".mes-lista", mm);
+    const fechar = () => { li.hidden = true; bt.setAttribute("aria-expanded", "false"); document.removeEventListener("click", fora, true); document.removeEventListener("keydown", tecla, true); };
+    const fora = (e) => { if (!mm.contains(e.target)) fechar(); };
+    const tecla = (e) => { if (e.key === "Escape") { fechar(); bt.focus(); } };
+    bt.onclick = () => { if (!li.hidden) return fechar(); li.hidden = false; bt.setAttribute("aria-expanded", "true"); document.addEventListener("click", fora, true); document.addEventListener("keydown", tecla, true); const s = $(".ver-item.sel", li); if (s) { s.focus(); s.scrollIntoView({ block: "nearest" }); } };
+    $$("[data-mesid]", li).forEach((b) => (b.onclick = async () => { fechar(); if (b.dataset.mesid === ESC.id || !(await podeSairDoPadrao())) return; abrirEscala(b.dataset.mesid); }));
+  }
   ligarMenuEscalas();
   const bs = $("#btSalvar"); if (bs) bs.onclick = botaoSalvar;
   $$("[data-tema]").forEach((b) => (b.onclick = () => aplicarTema(b.dataset.tema)));
@@ -1119,6 +1129,7 @@ function abrirCelula(pid, i) {
           ${alcance ? `<p class="mini" style="margin:0">Vale para ${nTrab(outros)} ${nTrab(outros) === 1 ? "dia" : "dias"}.</p>` : ""}</div>` : ""}
       ` : ""}` : `
       <div class="escolha"><button data-t="T" class="${r.t === "T" ? "sel" : ""}" ${travar ? "disabled" : ""}>Trabalha</button><button data-t="F" class="${r.t === "F" || r.t === "D" ? "sel" : ""}" ${travar ? "disabled" : ""}>Folga</button><button data-t="A" class="${r.t === "A" ? "sel" : ""}" ${travar ? "disabled" : ""}>Afastado</button><button data-t="V" class="${r.t === "V" ? "sel" : ""}" ${travar ? "disabled" : ""}>Férias</button></div>
+      ${r.t !== "T" && r.t !== "X" && r.t !== "N" ? blocoTurnos() : ""}
       ${r.t === "N" ? `<p class="dica">Vaga: a pessoa ainda não entrou neste dia${p.inicio ? ` (começa em ${isoBr(p.inicio)})` : ""}. Para mudar o dia de início, toque no nome da vaga.</p>` : ""}
       ${r.t === "A" || r.t === "V" ? `<p class="dica">${r.t === "A" ? "Afastado (atestado, INSS, licença ou saiu da empresa)" : "Férias"}: não conta como folga. Se o setor ficar descoberto, veja em "O que arrumar".</p>` : ""}
       ${r.t === "T" ? `${blocoTurnos()}
@@ -1219,6 +1230,14 @@ function abrirPessoa(pid) {
     </div>
     ${p.setor !== "Gerência" ? `<label class="marcar"><input type="checkbox" id="pSub" ${p.subGerente ? "checked" : ""} ${travar ? "disabled" : ""}><span><b>Substitui o gerente</b>: pode abrir e fechar a loja quando não tiver gerente (conta para a regra de 1 gerente na abertura e 1 no fechamento).</span></label>` : ""}
     ${restr.length ? `<p class="dica"><b>Combinado:</b> ${restr.map(esc).join(" · ")}</p>` : ""}
+    ${travar || p.fora ? "" : (() => {
+      const cad = turnosDe(p.setor), sug = horariosMaisUsados(p.setor), trabalho = p.dias.filter((c) => c.t === "T");
+      const usa = (t) => trabalho.length && trabalho.every((c) => mesmoHorario(c, t));
+      const chip = (t, attr, extra) => `<button type="button" class="chip-turno${usa(t) ? " sel" : ""}${extra || ""}" ${attr}><b>${esc(t.nome || "Mais usado")}</b><small>${esc(txtTurno(t))}</small></button>`;
+      return `<div class="turnos"><div class="turnos-tit"><b>Turno de ${esc(p.setor)}</b></div>
+        <p class="mini" style="margin:-4px 0 8px">Toque num turno para usar esse horário em todos os dias de trabalho do mês. As folgas não mudam.</p>
+        <div class="turnos-chips">${cad.map((t) => chip(t, `data-pturno="${esc(t.id)}"`)).join("")}${sug.map((t, k) => chip(t, `data-psug="${k}"`, " sugestao")).join("")}<button type="button" class="chip-turno novo" id="pNovoTurno">${ic("mais")}<span>Novo turno</span></button></div></div>`;
+    })()}
     <h3 style="margin-top:14px">Semanas</h3>
     <table class="tab"><tbody>${semanas.map(({ S, min, folgas }) => `<tr><td>${dataTxt(E.dias[S.dias[0]])} a ${dataTxt(E.dias[S.dias[S.dias.length - 1]])}${S.cheia ? "" : ' <span class="mini">(semana incompleta)</span>'}</td><td>${horasTxt(min)}</td><td>${p.diarista ? (() => { const n = S.dias.filter((i) => p.dias[i].t === "T").length; return `${n} ${n === 1 ? "dia" : "dias"}`; })() : `${folgas} folga${folgas === 1 ? "" : "s"}`}</td></tr>`).join("")}</tbody></table>
     ${p.diarista ? "" : `<p class="dica" style="margin-top:8px">Domingos de folga no mês: <b>${domF}</b></p>`}
@@ -1233,6 +1252,12 @@ function abrirPessoa(pid) {
   const nv = $("#pNomeVaga", pn); if (nv) nv.onchange = () => { const v = nv.value.trim(); if (v.length < 3) { nv.value = p.nome; return; } alterar(() => { p.nome = v; p.nomeCompleto = v; }, p.diarista ? "Nome mudado." : "Nome da vaga mudado."); abrirPessoa(pid); };
   const pi = $("#pInicio", pn); if (pi) pi.onchange = () => { alterar(() => aplicarInicio(p, pi.value), pi.value > E.dias[0].iso ? `A vaga começa em ${isoBr(pi.value)}. Confira as folgas da primeira semana.` : "A vaga vale o mês todo."); abrirPessoa(pid); };
   const sub = $("#pSub", pn); if (sub) sub.onchange = (e) => { alterar(() => { p.subGerente = e.target.checked; }, e.target.checked ? `${p.nome} agora pode abrir e fechar no lugar do gerente.` : `${p.nome} não substitui mais o gerente.`); abrirPessoa(pid); };
+  // turno: aplica o horário em todos os dias de trabalho do mês (respeitando o horário de cada dia)
+  const aplicarTurnoMes = (t) => { if (!t) return; alterar(() => { p.dias = p.dias.map((c, i) => (c.t === "T" ? ajustarParaDia({ t: "T", ini: t.ini, fim: t.fim, alm: t.alm ? [...t.alm] : null }, i, p) : c)); }, `${t.nome ? `Turno "${t.nome}"` : "Horário"} aplicado no mês de ${p.nome}.`); abrirPessoa(pid); };
+  $$("[data-pturno]", pn).forEach((b) => (b.onclick = () => aplicarTurnoMes(turnosDe(p.setor).find((x) => x.id === b.dataset.pturno))));
+  const psug = horariosMaisUsados(p.setor);
+  $$("[data-psug]", pn).forEach((b) => (b.onclick = () => aplicarTurnoMes(psug[+b.dataset.psug])));
+  const pnt = $("#pNovoTurno", pn); if (pnt) pnt.onclick = () => guardarTurno(p.setor, p.dias.find((c) => c.t === "T"), () => abrirPessoa(pid));
   if ($("#pHoras", pn)) $("#pHoras", pn).onchange = (e) => { alterar(() => { p.horas = +e.target.value; }, `Agora ${e.target.value}h por semana. Confira os horários.`); abrirPessoa(pid); };
   const bp = $("#pPadrao", pn); if (bp) bp.onclick = () => { alterar(() => { Object.assign(p, clone(o)); }, "Pessoa voltou ao padrão."); abrirPessoa(pid); };
   const bv = $("#pVolta", pn); if (bv) bv.onclick = () => { alterar(() => { delete p.fora; }, "Voltou para a escala."); abrirPessoa(pid); };
