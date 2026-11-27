@@ -27,6 +27,7 @@ const IC = {
   sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   lua: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
+  baixo: '<path d="M6 9l6 6 6-6"/>',
   cadeado: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   esq: '<path d="M15 5l-7 7 7 7"/>', dir: '<path d="M9 5l7 7-7 7"/>',
   pessoas: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2c3 .2 5.5 2.6 5.5 5.8"/>',
@@ -173,8 +174,25 @@ let COB = null;
 function recalcular() { VAL = validarTudo(E, P); MUD = mudancas(E, P); COB = indiceCobertura(E, P.necMes, P.horas); if (ABERTA) { const v = VERSOES.find((x) => x.id === ABERTA.id); if (v) v.erros = VAL.erros.length; } atualizarSeletor(); }
 /* quantas coisas para arrumar (erros de regra) tem uma escala */
 function contarErros(dados) { try { return validarTudo(sanear(dados, P), P).erros.length; } catch (e) { return 0; } }
-const rotuloVer = (nome, n) => `${nome}${n ? ` 🔴 ${n}` : ""}`;
-function atualizarSeletor() { const o = document.querySelector("#verSel option:checked"); if (!o) return; const v = o.value ? VERSOES.find((x) => x.id === o.value) : null; o.textContent = v ? rotuloVer(v.nome, v.erros) : rotuloVer("Escala padrão (fixa)", ESC && ESC._erros); }
+const bolErro = (n) => (n ? `<span class="bol-erro" title="${n} ${n === 1 ? "coisa" : "coisas"} para arrumar">${n}</span>` : "");
+function errosAberta() { return ABERTA ? (VERSOES.find((x) => x.id === ABERTA.id) || {}).erros : ESC && ESC._erros; }
+function atualizarSeletor() { const b = document.getElementById("verBol"); if (b) b.innerHTML = bolErro(errosAberta()); }
+/* menu de escolher a escala (no lugar da lista do navegador, para mostrar a bolinha) */
+function menuEscalas() {
+  const item = (id, nome, sub, n) => { const sel = (ABERTA ? ABERTA.id : "") === id;
+    return `<button type="button" role="option" aria-selected="${sel}" class="ver-item${sel ? " sel" : ""}" data-ver="${esc(id)}"><span class="ver-txt"><b>${esc(nome)}</b><small>${esc(sub)}</small></span>${n ? `<span class="ver-estado erro">${bolErro(n)} para arrumar</span>` : `<span class="ver-estado ok">${ic("check")} sem erro</span>`}</button>`; };
+  const sub = (v) => [v.atualizado_por || v.criado_por || "", v.atualizado_em ? quando(v.atualizado_em) : ""].filter(Boolean).join(" · ");
+  return `<div class="ver-menu" id="verMenu"><button type="button" class="ver-btn" id="verBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Escala aberta: ${esc(nomeAberta())}"><span class="ver-nome">${esc(ABERTA ? ABERTA.nome : "Escala padrão")}</span><span id="verBol">${bolErro(errosAberta())}</span>${ic("baixo")}</button><div class="ver-lista" role="listbox" hidden><p class="ver-titulo">Escolha a escala</p>${item("", "Escala padrão", "fixa · montada pelo escritório", ESC._erros)}${VERSOES.map((v) => item(v.id, v.nome, sub(v), v.erros)).join("")}</div></div>`;
+}
+function ligarMenuEscalas() {
+  const m = $("#verMenu"); if (!m) return;
+  const bt = $("#verBtn", m), li = $(".ver-lista", m);
+  const fechar = () => { li.hidden = true; bt.setAttribute("aria-expanded", "false"); document.removeEventListener("click", fora, true); document.removeEventListener("keydown", tecla, true); };
+  const fora = (e) => { if (!m.contains(e.target)) fechar(); };
+  const tecla = (e) => { if (e.key === "Escape") { fechar(); bt.focus(); } };
+  bt.onclick = () => { if (!li.hidden) return fechar(); li.hidden = false; bt.setAttribute("aria-expanded", "true"); document.addEventListener("click", fora, true); document.addEventListener("keydown", tecla, true); const s = $(".ver-item.sel", li); if (s) s.focus(); };
+  $$(".ver-item", li).forEach((b) => (b.onclick = () => { fechar(); const id = b.dataset.ver || null; if ((ABERTA ? ABERTA.id : null) === id) return; abrirVersao(id); }));
+}
 const pct = (v) => (v == null ? "-" : (Math.round(v * 1000) / 10).toLocaleString("pt-BR") + "%");
 const corPct = (v, bom, ok) => (v >= bom ? "verde" : v >= ok ? "amarelo" : "vermelho");
 
@@ -376,7 +394,7 @@ async function salvarSozinha() {
   if (error) { toast("Não salvou sozinho: " + error.message + ". Toque em Salvar."); return; }
   data.erros = VAL.erros.length; VERSOES.unshift(data); ABERTA = { id: data.id, nome: data.nome, versao: data.versao }; SUJO = false; _salvoEm = new Date(); _erroSalvar = null;
   try { localStorage.setItem(chaveVer(), data.id); } catch (e) {}
-  RESUMO = null; montarTopo();
+  RESUMO = null; montarTopo(); render();
   _salvarT = 1; await salvarAgora();
   toast(`Salva como "${data.nome}". Dá para trocar o nome no Início.`);
 }
@@ -454,7 +472,7 @@ function montarTopo() {
   const tema = temaAtual();
   const seletorEscala = !ESC ? "" : travada()
     ? `<span class="loja-nome" title="Escala lançada">${ic("cadeado")} ${esc(nomeAberta())}</span>`
-    : `<select class="loja-sel" id="verSel" aria-label="Escala aberta"><option value="">${esc(rotuloVer("Escala padrão (fixa)", ESC._erros))}</option>${VERSOES.map((v) => `<option value="${esc(v.id)}" ${ABERTA && ABERTA.id === v.id ? "selected" : ""}>${esc(rotuloVer(v.nome, v.erros))}</option>`).join("")}</select>
+    : `${menuEscalas()}
        <button class="btn-topo" id="btSalvar" title="Salvar">${ic("check")} Salvar</button>`;
   $("#topo").innerHTML = `<div class="marca"><span class="ponto"></span><span class="txt">Escalas das Lojas</span></div>
     ${ehAdmin() ? `<select class="loja-sel" id="lojaSel" aria-label="Loja"><option value="">Todas as lojas</option>${lojas.map((l) => `<option value="${esc(l.loja_cod)}" ${ESC && ESC.loja_cod === l.loja_cod ? "selected" : ""}>${esc(l.loja_nome)}</option>`).join("")}</select>` : ESC ? `<span class="loja-nome">${esc(ESC.loja_nome)}</span>` : ""}
@@ -470,7 +488,7 @@ function montarTopo() {
     const m = LISTA.find((l) => l.loja_cod === ls.value); abrirEscala(m.id);
   };
   const ms = $("#mesSel"); if (ms) ms.onchange = async () => { if (!(await podeSairDoPadrao())) { ms.value = ESC.id; return; } abrirEscala(ms.value); };
-  const vs = $("#verSel"); if (vs) vs.onchange = () => abrirVersao(vs.value || null).then(() => { const s = $("#verSel"); if (s) s.value = ABERTA ? ABERTA.id : ""; });
+  ligarMenuEscalas();
   const bs = $("#btSalvar"); if (bs) bs.onclick = botaoSalvar;
   $$("[data-tema]").forEach((b) => (b.onclick = () => aplicarTema(b.dataset.tema)));
   $("#sair").onclick = async () => { if (!(await podeSairDoPadrao())) return; await salvarAgora(); await SB.auth.signOut(); try { localStorage.removeItem("escala.aberta"); } catch (e) {} location.hash = ""; location.reload(); };
@@ -546,8 +564,8 @@ function telaInicio(c) {
   <section class="cartao"><h2>Escalas da loja</h2>
     <p class="dica">A escala padrão é a que veio pronta e nunca muda. As outras são as que vocês salvaram.</p>
     <table class="tab"><tbody>
-      <tr><td><b>Escala padrão</b>${ESC._erros ? ` <span class="selo-n" title="coisas para arrumar">${ESC._erros}</span>` : ""} <span class="mini">fixa</span>${!lancada && !ABERTA ? ' <span class="status rascunho">aberta</span>' : ""}${lancada && !ESC.lancada_versao ? ` <span class="status lancada">lançada</span>` : ""}</td><td class="mini">montada pelo escritório</td><td style="text-align:right">${!lancada && ABERTA ? `<button class="btn" data-abrir="">Abrir</button>` : ""}</td></tr>
-      ${VERSOES.map((x) => `<tr><td><b>${esc(x.nome)}</b>${x.erros ? ` <span class="selo-n" title="coisas para arrumar">${x.erros}</span>` : ""}${!lancada && ABERTA && ABERTA.id === x.id ? ' <span class="status rascunho">aberta</span>' : ""}${lancada && ESC.lancada_versao === x.id ? ` <span class="status lancada">lançada</span>` : ""}</td>
+      <tr><td><b>Escala padrão</b> ${bolErro(ESC._erros)} <span class="mini">fixa</span>${!lancada && !ABERTA ? ' <span class="status rascunho">aberta</span>' : ""}${lancada && !ESC.lancada_versao ? ` <span class="status lancada">lançada</span>` : ""}</td><td class="mini">montada pelo escritório</td><td style="text-align:right">${!lancada && ABERTA ? `<button class="btn" data-abrir="">Abrir</button>` : ""}</td></tr>
+      ${VERSOES.map((x) => `<tr><td><b>${esc(x.nome)}</b> ${bolErro(x.erros)}${!lancada && ABERTA && ABERTA.id === x.id ? ' <span class="status rascunho">aberta</span>' : ""}${lancada && ESC.lancada_versao === x.id ? ` <span class="status lancada">lançada</span>` : ""}</td>
         <td class="mini">${esc(x.atualizado_por || x.criado_por || "")} · ${esc(quando(x.atualizado_em))}</td>
         <td style="text-align:right;white-space:nowrap">${lancada ? "" : `${ABERTA && ABERTA.id === x.id ? "" : `<button class="btn" data-abrir="${esc(x.id)}">Abrir</button> `}<button class="btn" data-renomear="${esc(x.id)}">Renomear</button> <button class="btn perigo" data-apagar="${esc(x.id)}">Apagar</button>`}</td></tr>`).join("")}
     </tbody></table>

@@ -359,3 +359,27 @@ details.eq-setor > :not(summary) { margin: 0 18px; } details.eq-setor .eq-lista 
 .linha-diarista td.nome { box-shadow: inset 3px 0 0 var(--laranja); }
 .legenda .selo-diarista { margin-right: 4px; }
 .alcance { display: grid; gap: 6px; margin-top: 8px; }
+
+/* bolinha de "coisas para arrumar" e menu de escolher a escala */
+.bol-erro { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: #d93636; color: #fff; font-size: .72rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; vertical-align: 2px; }
+.ver-btn .bol-erro { min-width: 19px; height: 19px; font-size: .7rem; background: #ef4444; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); vertical-align: 0; }
+.ver-menu { position: relative; }
+.ver-btn { display: inline-flex; align-items: center; gap: 8px; max-width: 260px; background: rgba(255, 255, 255, .12); color: #fff; border: 1px solid rgba(255, 255, 255, .25); border-radius: 10px; padding: 6px 8px 6px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+.ver-btn:hover, .ver-btn[aria-expanded="true"] { background: rgba(255, 255, 255, .2); }
+.ver-btn .ic { width: 16px; height: 16px; opacity: .8; transition: transform .15s; }
+.ver-btn[aria-expanded="true"] .ic { transform: rotate(180deg); }
+.ver-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#verBol:empty { display: none; }
+.ver-lista { position: absolute; top: calc(100% + 8px); left: 0; width: min(370px, calc(100vw - 32px)); max-height: 60vh; overflow-y: auto; background: var(--sup); color: var(--texto); border: 1px solid var(--borda); border-radius: 14px; box-shadow: 0 20px 44px -12px rgba(0, 20, 40, .35); padding: 6px; z-index: 40; }
+.ver-titulo { margin: 6px 10px; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto3); }
+.ver-item { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 0; background: none; border-radius: 10px; text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.ver-item:hover, .ver-item:focus-visible { background: var(--sup2); outline: none; }
+.ver-item.sel { background: var(--acento-fundo); }
+.ver-txt { min-width: 0; }
+.ver-txt b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ver-txt small { display: block; color: var(--texto3); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ver-estado { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 600; white-space: nowrap; flex: none; }
+.ver-estado.erro { color: var(--erro); background: var(--erro-fundo); padding: 3px 10px 3px 3px; border-radius: 99px; }
+.ver-estado.erro .bol-erro { vertical-align: 0; }
+.ver-estado.ok { color: var(--ok); background: var(--ok-fundo); padding: 4px 10px 4px 8px; border-radius: 99px; }
+.ver-estado .ic { width: 15px; height: 15px; }
