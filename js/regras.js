@@ -10,9 +10,11 @@ const minDe = (s) => { if (s == null || s === "") return null; if (typeof s === 
 const horasTxt = (m) => { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return r ? `${h}h${String(r).padStart(2, "0")}` : `${h}h`; };
 const dataTxt = (x) => String(x.d).padStart(2, "0") + "/" + x.iso.slice(5, 7);
 const trabDe = (c) => (c && c.t === "T" ? c.fim - c.ini - (c.alm ? c.alm[1] - c.alm[0] : 0) : 0);
-const limiteDia = (p) => Math.round((p.horas * 60) / 5);
-/* dias em que a pessoa não está por motivo que não é folga: X = feriado com loja fechada, A = afastado (atestado, INSS, saiu), V = férias, N = ainda não entrou (vaga antes do dia de início) */
-const AUSENCIA = ["X", "A", "V", "N"];
+/* diarista: pessoa de fora paga pelo dia, até 8h por dia; não segue as regras da 5x2 */
+const ehDiarista = (p) => !!(p && p.diarista);
+const limiteDia = (p) => (ehDiarista(p) ? 480 : Math.round((p.horas * 60) / 5));
+/* dias em que a pessoa não está por motivo que não é folga: X = feriado com loja fechada, A = afastado (atestado, INSS, saiu), V = férias, N = ainda não entrou (vaga antes do dia de início), L = diarista não vem neste dia */
+const AUSENCIA = ["X", "A", "V", "N", "L"];
 /* setores que podem entrar antes da abertura ou sair depois do fechamento quando o gerente mexe (vira aviso, não trava) */
 const SETORES_HORARIO_LIVRE = ["Gerência", "Açougue", "Produção"];
 const ehFolga = (c) => c && (c.t === "F" || c.t === "D");
@@ -32,7 +34,7 @@ function saidaPara(p, ini, almDur) { return ini + limiteDia(p) + almDur; }
 function validarPessoa(E, p, o) {
   const out = [], R = E.regras || {}, L = E.loja;
   const add = (nivel, dia, texto, explica) => out.push({ nivel, pessoa: p.id, dia, texto, explica });
-  const lim = limiteDia(p);
+  const lim = limiteDia(p), dia5x2 = !ehDiarista(p);
   const saidaMax = minDe(p.saidaMax), entradaMin = minDe(p.entradaMin);
   let seguidos = 0, fimAnt = null, domFolga = 0, domAntTrab = false;
   E.dias.forEach((x, i) => {
@@ -40,7 +42,7 @@ function validarPessoa(E, p, o) {
     if (c.t === "T") {
       const trab = trabDe(c), alm = c.alm ? c.alm[1] - c.alm[0] : 0;
       if (x.fechado) add("erro", i, "Escalado com a loja fechada", `A loja não abre em ${dataTxt(x)}${x.feriado ? " (" + x.feriado + ")" : ""}. Marque folga.`);
-      else if (!x.fixo) add("erro", i, "Domingo só com diaristas", "Nesta loja o domingo é feito só por diaristas. A equipe fica de folga.");
+      else if (!x.fixo && dia5x2) add("erro", i, "Domingo só com diaristas", "Nesta loja o domingo é feito só por diaristas. A equipe fica de folga.");
       if (!x.fechado && x.ws != null) {
         const entraCedo = Math.min(x.ws, p.entradaAtual ?? 9999);
         // gerência, açougue e produção às vezes entram antes ou saem depois: o gerente pode mudar à mão (fica só o aviso)
@@ -49,15 +51,16 @@ function validarPessoa(E, p, o) {
         if (c.fim > x.we) add(nv, i, `Sai depois das ${hm(x.we)}`, `A loja fecha às ${hm(x.fecha)}. A equipe sai no máximo 15 min depois (${hm(x.we)}).${ex}`);
       }
       if (trab > 600) add("erro", i, `Trabalha ${horasTxt(trab)} no dia`, "O máximo por lei é 10h no dia (8h + 2h extras). CLT art. 59.");
-      else if (trab > lim) add("erro", i, `Passou de ${horasTxt(lim)} no dia`, `Quem é ${p.horas}h por semana trabalha até ${horasTxt(lim)} por dia. Acima disso vira hora extra.`);
+      else if (trab > lim) add("erro", i, `Passou de ${horasTxt(lim)} no dia`, dia5x2 ? `Quem é ${p.horas}h por semana trabalha até ${horasTxt(lim)} por dia. Acima disso vira hora extra.` : "O diarista trabalha até 8h no dia.");
       if (trab > 360 && alm < 45) add("erro", i, "Almoço menor que 45 min", "Quem trabalha mais de 6h precisa de almoço de 45 min a 2h (acordo coletivo, cl. 22).");
       if (alm > 120) add("erro", i, "Almoço maior que 2h", "O almoço pode ir até 2h (acordo coletivo, cl. 22).");
       if (trab > 240 && trab <= 360 && alm < 15) add("erro", i, "Falta a pausa de 15 min", "Quem trabalha de 4h a 6h precisa de pausa de 15 min (CLT art. 71).");
       if (c.fim <= c.ini) add("erro", i, "Saída antes da entrada", "Confira os horários do dia.");
       if (fimAnt != null && c.ini + 1440 - fimAnt < (R.interjornada || 660)) add("erro", i, "Menos de 11h de descanso", `Saiu às ${hm(fimAnt)} no dia anterior e entra às ${hm(c.ini)}. Entre um turno e outro precisa de 11h (CLT art. 66).`);
       seguidos++;
-      if (seguidos === (R.maxSeguidos || 5) + 1) add("erro", i, `Mais de ${R.maxSeguidos || 5} dias seguidos`, "Na escala 5x2 a pessoa trabalha no máximo 5 dias seguidos antes de folgar.");
       fimAnt = c.fim;
+      if (!dia5x2) return; // diarista: as regras abaixo são da escala 5x2 dos contratados
+      if (seguidos === (R.maxSeguidos || 5) + 1) add("erro", i, `Mais de ${R.maxSeguidos || 5} dias seguidos`, "Na escala 5x2 a pessoa trabalha no máximo 5 dias seguidos antes de folgar.");
       if (x.w === 0) {
         if (domAntTrab) add("erro", i, "Dois domingos seguidos trabalhados", "Regra da empresa: não trabalhar dois domingos seguidos.");
         domAntTrab = true;
@@ -73,11 +76,12 @@ function validarPessoa(E, p, o) {
       if (p.turno === "M" && c.fim > 1120) add("aviso", i, "Turno da manhã saindo depois de 18h40", "Esta pessoa é do turno da manhã.");
       if (p.turno === "T" && x.we != null && c.fim < x.we) add("aviso", i, "Turno da tarde não fecha a loja", "Esta pessoa é do turno da tarde e costuma fechar a loja.");
     } else {
-      if (x.w === 6 && x.fixo && !x.feriado && !AUSENCIA.includes(c.t)) add("erro", i, "Folga no sábado", "Regra da empresa: ninguém folga no sábado. Troque a folga para um dia de segunda a sexta.");
+      if (dia5x2 && x.w === 6 && x.fixo && !x.feriado && !AUSENCIA.includes(c.t)) add("erro", i, "Folga no sábado", "Regra da empresa: ninguém folga no sábado. Troque a folga para um dia de segunda a sexta.");
       seguidos = 0; fimAnt = null;
       if (x.w === 0) { domFolga++; domAntTrab = false; }
     }
   });
+  if (!dia5x2) return out;
   const minDom = R.domingosFolgaMin || 2, domingos = E.dias.filter((x) => x.w === 0).length;
   if (domFolga < Math.min(minDom, domingos)) add("erro", null, `Só ${domFolga} domingo(s) de folga no mês`, `Regra da empresa: pelo menos ${minDom} domingos de folga no mês.`);
   (E.semanas || []).forEach((S) => {
@@ -175,12 +179,12 @@ function validarTudo(E, P) {
 
 /* diferenças entre a escala do gerente e a padrão */
 const mesmoDia = (a, b) => a.t === b.t && (a.t !== "T" || (a.ini === b.ini && a.fim === b.fim && JSON.stringify(a.alm || null) === JSON.stringify(b.alm || null)));
-const diaTxt = (c) => (c.t === "T" ? `${hm(c.ini)} às ${hm(c.fim)}` : c.t === "D" ? "folga (domingo)" : c.t === "X" ? "feriado" : c.t === "A" ? "afastado" : c.t === "V" ? "férias" : c.t === "N" ? "ainda não entrou" : "folga");
+const diaTxt = (c) => (c.t === "T" ? `${hm(c.ini)} às ${hm(c.fim)}` : c.t === "D" ? "folga (domingo)" : c.t === "X" ? "feriado" : c.t === "A" ? "afastado" : c.t === "V" ? "férias" : c.t === "N" ? "ainda não entrou" : c.t === "L" ? "não vem" : "folga");
 function mudancas(E, P) {
   const out = [], pad = Object.fromEntries(P.pessoas.map((p) => [p.id, p]));
   E.pessoas.forEach((p) => {
     const o = pad[p.id];
-    if (!o) { if (!p.fora) out.push({ pessoa: p.id, tipo: "nova", texto: `Incluída na escala (${p.setor}, ${p.horas}h)` }); return; }
+    if (!o) { if (!p.fora) out.push({ pessoa: p.id, tipo: "nova", texto: ehDiarista(p) ? `Diarista incluído (${p.setor}, ${E.dias.filter((x, i) => p.dias[i].t === "T").length} dias no mês)` : `Incluída na escala (${p.setor}, ${p.horas}h)` }); return; }
     if (p.fora) { out.push({ pessoa: p.id, tipo: "fora", texto: `Tirada da escala${p.fora.motivo ? ": " + p.fora.motivo : ""}` }); return; }
     if (p.horas !== o.horas) out.push({ pessoa: p.id, tipo: "horas", texto: `Contrato de ${o.horas}h passou para ${p.horas}h por semana` });
     if (p.setor !== o.setor) out.push({ pessoa: p.id, tipo: "setor", texto: `Setor ${o.setor} passou para ${p.setor}` });

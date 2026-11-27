@@ -354,3 +354,8 @@ details.eq-setor > :not(summary) { margin: 0 18px; } details.eq-setor .eq-lista 
   .impressao td.f { background: #e8e8e8; } .impressao td.d { background: #fde3d3; }
   .impressao .pagina { page-break-after: always; }
 }
+/* diarista incluído pelo gerente */
+.selo-diarista { display: inline-block; font-size: .62rem; font-weight: 800; letter-spacing: .04em; padding: 1px 6px; margin-right: 6px; border-radius: 99px; background: var(--laranja); color: #fff; vertical-align: 1px; }
+.linha-diarista td.nome { box-shadow: inset 3px 0 0 var(--laranja); }
+.legenda .selo-diarista { margin-right: 4px; }
+.alcance { display: grid; gap: 6px; margin-top: 8px; }
