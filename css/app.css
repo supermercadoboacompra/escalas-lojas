@@ -406,3 +406,11 @@ body.movendo, body.movendo * { cursor: grabbing !important; user-select: none; }
 @keyframes pisca-linha { 0%, 25% { background: color-mix(in srgb, var(--laranja) 28%, var(--sup)); } 100% { background: var(--sup); } }
 @media (prefers-reduced-motion: reduce) { .fantasma, .grade-escala tr.recem-movida td { animation: none; } }
 @media (hover: none) { .alca { opacity: .8; } }
+
+/* aviso curto de setor faltando gente (uma linha só) */
+.faixa-fina { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 6px 12px; margin-bottom: 12px; border-radius: 10px; font-size: 13px; }
+.faixa-fina.erro { background: var(--erro-fundo); color: var(--erro); }
+.faixa-fina .ic { width: 16px; height: 16px; }
+.chip-falta { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 99px; background: var(--sup); color: var(--texto); font-weight: 600; font-size: 12px; border: 1px solid color-mix(in srgb, var(--erro) 25%, transparent); }
+.chip-falta i { font-style: normal; color: var(--erro); font-weight: 700; }
+.link-fino { margin-left: auto; color: var(--erro); font-weight: 600; font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; }

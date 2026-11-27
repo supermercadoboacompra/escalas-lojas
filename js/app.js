@@ -239,7 +239,7 @@ function faixaAlertas() {
   const conta = (t) => pend.filter((a) => a.tipo === t).length;
   const partes = [conta("saiu") && `${conta("saiu")} saiu da empresa`, conta("afastado") && `${conta("afastado")} afastado`, conta("ferias") && `${conta("ferias")} de férias`, conta("novo") && `${conta("novo")} entrou e não está na escala`].filter(Boolean);
   return `${pend.length ? `<div class="faixa aviso alerta-quadro">${ic("pessoas")}<div><b>Mudanças no quadro (Senior):</b> ${partes.join(", ")}. A escala não muda sozinha: veja e decida o que fazer.</div><span class="espaco"></span><button class="btn primario" data-alertas>Ver e decidir</button></div>` : ""}
-    ${inc.length ? `<div class="faixa erro">${ic("pessoas")}<div><b>Setor incompleto, faltando gente:</b> ${inc.map((x) => `${esc(x.setor)} (${x.agora} de ${x.era}, falta${x.era - x.agora > 1 ? "m" : ""} ${x.era - x.agora})`).join(", ")}. Inclua quem entrou no lugar ou cubra com colegas e diaristas.</div><span class="espaco"></span><a class="btn" href="#/equipe">Ver equipe</a></div>` : ""}`;
+    ${inc.length ? `<div class="faixa-fina erro" title="Setor com menos gente que na escala padrão. Inclua quem entrou no lugar ou cubra com colegas e diaristas.">${ic("pessoas")}<b>Faltando gente:</b>${inc.map((x) => `<span class="chip-falta">${esc(x.setor)} <i>−${x.era - x.agora}</i></span>`).join("")}<a class="link-fino" href="#/equipe">Ver equipe</a></div>` : ""}`;
 }
 function ligarFaixaAlertas(c) { $$("[data-alertas]", c).forEach((b) => (b.onclick = abrirAlertas)); }
 function impactoTxt(antesCob, antesBur) {
@@ -718,7 +718,7 @@ function telaEscala(c) {
     });
   });
   c.innerHTML = `
-  ${lancada ? `<div class="faixa ok">${ic("cadeado")}<div>Escala lançada em ${esc(quando(ESC.lancada_em))}. Para mudar, reabra.</div><span class="espaco"></span><button class="btn" id="reabrir">Reabrir para mudar</button></div>` : VAL.erros.length ? `<div class="faixa erro"><b>${VAL.erros.length}</b>&nbsp;${VAL.erros.length === 1 ? "coisa para arrumar (contorno vermelho)" : "coisas para arrumar (contorno vermelho)"}<span class="espaco"></span><a class="btn" href="#/avisos">Ver lista</a></div>` : `<div class="faixa ok">${ic("check")}<div>Nenhuma regra quebrada. Pode lançar quando quiser.</div><span class="espaco"></span><button class="btn laranja" id="lancar">Lançar escala</button></div>`}
+  ${lancada ? `<div class="faixa ok">${ic("cadeado")}<div>Escala lançada em ${esc(quando(ESC.lancada_em))}. Para mudar, reabra.</div><span class="espaco"></span><button class="btn" id="reabrir">Reabrir para mudar</button></div>` : VAL.erros.length ? `<div class="faixa-fina erro"><span class="bol-erro">${VAL.erros.length}</span><b>${VAL.erros.length === 1 ? "coisa para arrumar" : "coisas para arrumar"}</b><span>(contorno vermelho na escala)</span><a class="link-fino" href="#/avisos">Ver lista</a></div>` : `<div class="faixa ok">${ic("check")}<div>Nenhuma regra quebrada. Pode lançar quando quiser.</div><span class="espaco"></span><button class="btn laranja" id="lancar">Lançar escala</button></div>`}
   ${faixaAlertas()}
   ${faixaCobertura()}
   <div class="ferramentas">
