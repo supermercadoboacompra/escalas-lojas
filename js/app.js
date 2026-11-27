@@ -132,10 +132,11 @@ async function abrirEscala(id, versaoId) {
   $("#conteudo").innerHTML = `<section class="cartao centro"><p class="dica">Abrindo a escala...</p></section>`;
   const [{ data, error }, vs] = await Promise.all([
     SB.from("escalas").select("*").eq("id", id).single(),
-    SB.from("escalas_versoes").select("id,nome,criado_em,criado_por,atualizado_em,atualizado_por,versao").eq("escala_id", id).order("atualizado_em", { ascending: false }),
+    SB.from("escalas_versoes").select("id,nome,criado_em,criado_por,atualizado_em,atualizado_por,versao,dados").eq("escala_id", id).order("atualizado_em", { ascending: false }),
   ]);
   if (error) { toast("Não consegui abrir: " + error.message); return; }
   ESC = data; P = data.padrao; VERSOES = vs.data || []; SUJO = false;
+  ESC._erros = contarErros(P); VERSOES.forEach((v) => { v.erros = contarErros(v.dados); delete v.dados; });
   try { localStorage.setItem("escala.aberta", id); } catch (e) {}
   const i = LISTA.findIndex((l) => l.id === id); if (i >= 0) Object.assign(LISTA[i], { status: data.status, lancada_em: data.lancada_em, lancada_por: data.lancada_por, lancada_nome: data.lancada_nome });
   if (ESC.status === "lancada") { E = sanear(ESC.atual, P); ABERTA = ESC.lancada_versao ? VERSOES.find((v) => v.id === ESC.lancada_versao) || null : null; prepararTela(); return; }
@@ -169,7 +170,11 @@ function podeSairDoPadrao() {
     [{ rotulo: "Cancelar", fn: () => ok(false) }, { rotulo: "Jogar fora", fn: () => { SUJO = false; ok(true); } }, { rotulo: "Salvar com nome", tipo: "primario", fn: async () => { const r = await salvarComNome(); ok(!!r); } }]));
 }
 let COB = null;
-function recalcular() { VAL = validarTudo(E, P); MUD = mudancas(E, P); COB = indiceCobertura(E, P.necMes, P.horas); }
+function recalcular() { VAL = validarTudo(E, P); MUD = mudancas(E, P); COB = indiceCobertura(E, P.necMes, P.horas); if (ABERTA) { const v = VERSOES.find((x) => x.id === ABERTA.id); if (v) v.erros = VAL.erros.length; } atualizarSeletor(); }
+/* quantas coisas para arrumar (erros de regra) tem uma escala */
+function contarErros(dados) { try { return validarTudo(sanear(dados, P), P).erros.length; } catch (e) { return 0; } }
+const rotuloVer = (nome, n) => `${nome}${n ? ` 🔴 ${n}` : ""}`;
+function atualizarSeletor() { const o = document.querySelector("#verSel option:checked"); if (!o) return; const v = o.value ? VERSOES.find((x) => x.id === o.value) : null; o.textContent = v ? rotuloVer(v.nome, v.erros) : rotuloVer("Escala padrão (fixa)", ESC && ESC._erros); }
 const pct = (v) => (v == null ? "-" : (Math.round(v * 1000) / 10).toLocaleString("pt-BR") + "%");
 const corPct = (v, bom, ok) => (v >= bom ? "verde" : v >= ok ? "amarelo" : "vermelho");
 
@@ -357,10 +362,24 @@ function alterar(fn, msg) {
   if (JSON.stringify(E) === antes) return false;
   DESFAZER.push(antes); if (DESFAZER.length > 60) DESFAZER.shift();
   depoisDeMexer();
-  if (msg) toast(ABERTA ? msg : "Mudado. Para guardar, toque em Salvar e dê um nome.", { rotulo: "Desfazer", fn: desfazer });
+  if (msg) toast(msg, { rotulo: "Desfazer", fn: desfazer });
   return true;
 }
-function depoisDeMexer() { recalcular(); if (ABERTA) agendarSalvar(); else { SUJO = MUD.length > 0; mostrarSalvo(); } render(); }
+function depoisDeMexer() { recalcular(); if (ABERTA) agendarSalvar(); else { SUJO = MUD.length > 0; mostrarSalvo(); if (SUJO) salvarSozinha(); } render(); }
+/* mexeu na padrão: guarda na hora numa escala nova (mesmo com coisas para arrumar), para não perder nada */
+let _criando = false;
+async function salvarSozinha() {
+  if (_criando || ABERTA || travada()) return; _criando = true;
+  const nome = nomeLivre();
+  const { data, error } = await SB.from("escalas_versoes").insert({ escala_id: ESC.id, nome, dados: E }).select("id,nome,criado_em,criado_por,atualizado_em,atualizado_por,versao").single();
+  _criando = false;
+  if (error) { toast("Não salvou sozinho: " + error.message + ". Toque em Salvar."); return; }
+  data.erros = VAL.erros.length; VERSOES.unshift(data); ABERTA = { id: data.id, nome: data.nome, versao: data.versao }; SUJO = false; _salvoEm = new Date(); _erroSalvar = null;
+  try { localStorage.setItem(chaveVer(), data.id); } catch (e) {}
+  RESUMO = null; montarTopo();
+  _salvarT = 1; await salvarAgora();
+  toast(`Salva como "${data.nome}". Dá para trocar o nome no Início.`);
+}
 function desfazer() {
   if (travada() || !DESFAZER.length) return;
   E = JSON.parse(DESFAZER.pop()); depoisDeMexer(); toast("Desfeito.");
@@ -394,7 +413,7 @@ function salvarComNome(copia) {
       if (VERSOES.some((v) => v.nome.toLowerCase() === nome.toLowerCase())) { toast("Já tem uma escala com esse nome."); return false; }
       const { data, error } = await SB.from("escalas_versoes").insert({ escala_id: ESC.id, nome, dados: E }).select("id,nome,criado_em,criado_por,atualizado_em,atualizado_por,versao").single();
       if (error) { toast("Não salvou: " + error.message); return false; }
-      VERSOES.unshift(data); ABERTA = { id: data.id, nome: data.nome, versao: data.versao }; SUJO = false; _salvoEm = new Date(); _erroSalvar = null;
+      data.erros = VAL.erros.length; VERSOES.unshift(data); ABERTA = { id: data.id, nome: data.nome, versao: data.versao }; SUJO = false; _salvoEm = new Date(); _erroSalvar = null;
       try { localStorage.setItem(chaveVer(), data.id); } catch (e) {}
       RESUMO = null; montarTopo(); render(); toast(`Salva como "${data.nome}".`); ok(data);
     } }]);
@@ -435,7 +454,7 @@ function montarTopo() {
   const tema = temaAtual();
   const seletorEscala = !ESC ? "" : travada()
     ? `<span class="loja-nome" title="Escala lançada">${ic("cadeado")} ${esc(nomeAberta())}</span>`
-    : `<select class="loja-sel" id="verSel" aria-label="Escala aberta"><option value="">Escala padrão (fixa)</option>${VERSOES.map((v) => `<option value="${esc(v.id)}" ${ABERTA && ABERTA.id === v.id ? "selected" : ""}>${esc(v.nome)}</option>`).join("")}</select>
+    : `<select class="loja-sel" id="verSel" aria-label="Escala aberta"><option value="">${esc(rotuloVer("Escala padrão (fixa)", ESC._erros))}</option>${VERSOES.map((v) => `<option value="${esc(v.id)}" ${ABERTA && ABERTA.id === v.id ? "selected" : ""}>${esc(rotuloVer(v.nome, v.erros))}</option>`).join("")}</select>
        <button class="btn-topo" id="btSalvar" title="Salvar">${ic("check")} Salvar</button>`;
   $("#topo").innerHTML = `<div class="marca"><span class="ponto"></span><span class="txt">Escalas das Lojas</span></div>
     ${ehAdmin() ? `<select class="loja-sel" id="lojaSel" aria-label="Loja"><option value="">Todas as lojas</option>${lojas.map((l) => `<option value="${esc(l.loja_cod)}" ${ESC && ESC.loja_cod === l.loja_cod ? "selected" : ""}>${esc(l.loja_nome)}</option>`).join("")}</select>` : ESC ? `<span class="loja-nome">${esc(ESC.loja_nome)}</span>` : ""}
@@ -458,7 +477,7 @@ function montarTopo() {
 }
 function montarAbas(rota) {
   const n = VAL ? VAL.erros.length : 0;
-  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ...(tem6x1() ? [["6x1", "Escala 6x1"]] : []), ["dia", "Dia a dia"], ["equipe", "Equipe"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["mudancas", "Mudanças" + (MUD && MUD.length ? ` <span class="selo-n amarelo">${MUD.length}</span>` : "")], ["regras", "Regras"], ["ajuda", "Como usar"]] : [];
+  const abas = ESC ? [["inicio", "Início"], ["escala", "Escala do mês"], ...(tem6x1() ? [["6x1", "Escala 6x1"]] : []), ["dia", "Dia a dia"], ["equipe", "Equipe"], ["movimento", "Movimento e pessoas"], ["avisos", "O que arrumar" + (n ? ` <span class="selo-n">${n}</span>` : "")], ["regras", "Regras"], ["ajuda", "Como usar"]] : [];
   if (ehAdmin()) abas.unshift(["lojas", "Todas as lojas"]);
   $("#abas").innerHTML = abas.map(([k, t]) => `<a href="#/${k}" class="${k === rota ? "ativa" : ""}">${t}</a>`).join("");
 }
@@ -467,7 +486,7 @@ function render() {
   if (!ESC && rota !== "lojas") rota = ehAdmin() ? "lojas" : "inicio";
   montarAbas(rota);
   const c = $("#conteudo");
-  ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, "6x1": telaSeisUm, dia: telaDia, equipe: telaEquipe, movimento: telaMovimento, avisos: telaAvisos, mudancas: telaMudancas, regras: telaRegras, ajuda: telaAjuda }[rota] || telaInicio)(c);
+  ({ lojas: telaLojas, inicio: telaInicio, escala: telaEscala, "6x1": telaSeisUm, dia: telaDia, equipe: telaEquipe, movimento: telaMovimento, avisos: telaAvisos, regras: telaRegras, ajuda: telaAjuda }[rota] || telaInicio)(c);
 }
 
 /* ================= TODAS AS LOJAS (admin) ================= */
@@ -482,18 +501,18 @@ async function telaLojas(c) {
       const base = r.status === "lancada" ? r.atual : ult ? ult.dados : r.padrao;
       const a = sanear(base, r.padrao), v = validarTudo(a, r.padrao);
       const ic_ = indiceCobertura(a, r.padrao.necMes, r.padrao.horas) || {};
-      return [r.id, { erros: v.erros.length, cob: v.cobertura.length, geral: ic_.geral, obrig: ic_.obrig, mud: mudancas(a, r.padrao).length, pessoas: a.pessoas.filter((p) => !p.fora).length, salvas: vs.length, ult }];
+      return [r.id, { erros: v.erros.length, cob: v.cobertura.length, geral: ic_.geral, obrig: ic_.obrig, pessoas: a.pessoas.filter((p) => !p.fora).length, salvas: vs.length, ult }];
     }));
   }
   const alvo = $("#tabLojas"); if (!alvo) return;
   const lanc = LISTA.filter((l) => l.status === "lancada").length;
   alvo.innerHTML = `<div class="numeros"><div class="numero verde"><b>${lanc}</b><span>lançadas</span></div><div class="numero amarelo"><b>${LISTA.length - lanc}</b><span>ainda não lançadas</span></div></div>
     <p class="dica">Nas lojas que não lançaram, os números são da última escala que o gerente salvou (ou da padrão, se ele ainda não salvou nenhuma).</p>
-    <div class="rolagem"><table class="tab"><thead><tr><th>Loja</th><th>Mês</th><th>Situação</th><th>Cobertura geral</th><th>Obrigatórios juntos</th><th>Escalas salvas</th><th>Mudanças da padrão</th><th>A arrumar</th><th>Horários sem setor obrigatório</th><th>Última mexida</th></tr></thead><tbody>
+    <div class="rolagem"><table class="tab"><thead><tr><th>Loja</th><th>Mês</th><th>Situação</th><th>Cobertura geral</th><th>Obrigatórios juntos</th><th>Escalas salvas</th><th>A arrumar</th><th>Horários sem setor obrigatório</th><th>Última mexida</th></tr></thead><tbody>
     ${LISTA.map((l) => { const r = RESUMO[l.id] || {}; return `<tr class="clica" data-id="${esc(l.id)}"><td><b>${esc(l.loja_nome)}</b><br><span class="mini">${r.pessoas ?? ""} pessoas</span></td><td>${esc(mesTxt(l.mes))}</td>
       <td>${l.status === "lancada" ? `<span class="status lancada">${ic("check")} Lançada</span><br><span class="mini">"${esc(l.lancada_nome || "Escala padrão")}" · ${esc(quando(l.lancada_em))} · ${esc(l.lancada_por || "")}</span>` : `<span class="status rascunho">Não lançada</span>`}</td>
       <td><span class="pct ${corPct(r.geral ?? 0, 0.85, 0.75)}">${pct(r.geral)}</span></td><td><span class="pct ${corPct(r.obrig ?? 0, 0.98, 0.9)}">${pct(r.obrig)}</span></td>
-      <td>${r.salvas || "nenhuma"}</td><td>${r.mud ? r.mud : "nenhuma"}</td><td>${r.erros ? `<b style="color:var(--erro)">${r.erros}</b>` : "nada"}</td><td>${r.cob ? `<b style="color:var(--erro)">${r.cob}</b>` : "nenhum"}</td>
+      <td>${r.salvas || "nenhuma"}</td><td>${r.erros ? `<b style="color:var(--erro)">${r.erros}</b>` : "nada"}</td><td>${r.cob ? `<b style="color:var(--erro)">${r.cob}</b>` : "nenhum"}</td>
       <td class="mini">${r.ult ? `${esc(r.ult.atualizado_por || "")} em "${esc(r.ult.nome)}"<br>${esc(quando(r.ult.atualizado_em))}` : "ninguém mexeu"}</td></tr>`; }).join("")}
     </tbody></table></div>`;
   $$("tr[data-id]", alvo).forEach((tr) => (tr.onclick = () => abrirEscala(tr.dataset.id)));
@@ -511,11 +530,10 @@ function telaInicio(c) {
       ${lancada ? `<span class="status lancada">${ic("check")} Lançada</span>` : `<span class="status rascunho">Ainda não lançada</span>`}
     </div>
     ${lancada ? `<div class="faixa ok" style="margin-top:14px">${ic("cadeado")}<div>Lançada a escala <b>"${esc(nomeAberta())}"</b> em ${esc(quando(ESC.lancada_em))} por ${esc(ESC.lancada_por || "")}. Para mudar alguma coisa, reabra.</div><span class="espaco"></span><button class="btn" id="reabrir">Reabrir para mudar</button></div>`
-      : `<div class="faixa ${SUJO ? "erro" : ABERTA ? "ok" : "aviso"}" style="margin-top:14px"><div>Aberta agora: <b>${esc(nomeAberta())}</b>${!ABERTA ? (SUJO ? ". Você mexeu e ainda não salvou: toque em Salvar e dê um nome." : ". Ela é fixa: se mexer, salve com um nome e vira uma escala sua.") : ". As mudanças se salvam sozinhas."}</div>${SUJO ? `<span class="espaco"></span><button class="btn primario" id="salvarJa">Salvar com nome</button>` : ""}</div>`}
+      : `<div class="faixa ${SUJO ? "erro" : ABERTA ? "ok" : "aviso"}" style="margin-top:14px"><div>Aberta agora: <b>${esc(nomeAberta())}</b>${!ABERTA ? (SUJO ? ". Você mexeu e ainda não salvou: toque em Salvar e dê um nome." : ". Ela é fixa: se mexer, vira uma escala sua e se salva sozinha.") : ". As mudanças se salvam sozinhas."}</div>${SUJO ? `<span class="espaco"></span><button class="btn primario" id="salvarJa">Salvar com nome</button>` : ""}</div>`}
     <div class="numeros">
       <div class="numero ${v.erros.length ? "vermelho" : "verde"}"><b>${v.erros.length}</b><span>${v.erros.length === 1 ? "coisa para arrumar" : "coisas para arrumar"}</span></div>
       <div class="numero ${v.cobertura.length ? "vermelho" : "verde"}"><b>${v.cobertura.length}</b><span>horários sem operadora, açougue, padaria ou fiscal</span></div>
-      <div class="numero"><b>${MUD.length}</b><span>mudanças em relação à escala padrão</span></div>
       <div class="numero ${v.avisos.length ? "amarelo" : ""}"><b>${v.avisos.length}</b><span>avisos (pode lançar assim)</span></div>
     </div>
     <div class="linha">
@@ -528,8 +546,8 @@ function telaInicio(c) {
   <section class="cartao"><h2>Escalas da loja</h2>
     <p class="dica">A escala padrão é a que veio pronta e nunca muda. As outras são as que vocês salvaram.</p>
     <table class="tab"><tbody>
-      <tr><td><b>Escala padrão</b> <span class="mini">fixa</span>${!lancada && !ABERTA ? ' <span class="status rascunho">aberta</span>' : ""}${lancada && !ESC.lancada_versao ? ` <span class="status lancada">lançada</span>` : ""}</td><td class="mini">montada pelo escritório</td><td style="text-align:right">${!lancada && ABERTA ? `<button class="btn" data-abrir="">Abrir</button>` : ""}</td></tr>
-      ${VERSOES.map((x) => `<tr><td><b>${esc(x.nome)}</b>${!lancada && ABERTA && ABERTA.id === x.id ? ' <span class="status rascunho">aberta</span>' : ""}${lancada && ESC.lancada_versao === x.id ? ` <span class="status lancada">lançada</span>` : ""}</td>
+      <tr><td><b>Escala padrão</b>${ESC._erros ? ` <span class="selo-n" title="coisas para arrumar">${ESC._erros}</span>` : ""} <span class="mini">fixa</span>${!lancada && !ABERTA ? ' <span class="status rascunho">aberta</span>' : ""}${lancada && !ESC.lancada_versao ? ` <span class="status lancada">lançada</span>` : ""}</td><td class="mini">montada pelo escritório</td><td style="text-align:right">${!lancada && ABERTA ? `<button class="btn" data-abrir="">Abrir</button>` : ""}</td></tr>
+      ${VERSOES.map((x) => `<tr><td><b>${esc(x.nome)}</b>${x.erros ? ` <span class="selo-n" title="coisas para arrumar">${x.erros}</span>` : ""}${!lancada && ABERTA && ABERTA.id === x.id ? ' <span class="status rascunho">aberta</span>' : ""}${lancada && ESC.lancada_versao === x.id ? ` <span class="status lancada">lançada</span>` : ""}</td>
         <td class="mini">${esc(x.atualizado_por || x.criado_por || "")} · ${esc(quando(x.atualizado_em))}</td>
         <td style="text-align:right;white-space:nowrap">${lancada ? "" : `${ABERTA && ABERTA.id === x.id ? "" : `<button class="btn" data-abrir="${esc(x.id)}">Abrir</button> `}<button class="btn" data-renomear="${esc(x.id)}">Renomear</button> <button class="btn perigo" data-apagar="${esc(x.id)}">Apagar</button>`}</td></tr>`).join("")}
     </tbody></table>
@@ -540,16 +558,18 @@ function telaInicio(c) {
     <ol class="passos">
       <li><div><b>Veja a escala.</b> Ela já vem pronta (é a escala padrão, que fica fixa). Cada linha é uma pessoa, cada coluna é um dia.</div></li>
       <li><div><b>Mexa no que precisar.</b> Toque num dia da pessoa para mudar o horário, dar folga ou trocar a folga de dia.</div></li>
-      <li><div><b>Salve com um nome.</b> Na primeira vez, toque em Salvar e dê um nome (ex.: "Escala 2"). Depois disso, cada mudança se salva sozinha.</div></li>
+      <li><div><b>Tudo se salva sozinho.</b> Na primeira mexida, vira uma escala sua (ex.: "Escala 2"), mesmo que ainda tenha coisa para arrumar. Dá para trocar o nome aqui embaixo, em "Escalas da loja".</div></li>
       <li><div><b>Arrume o que ficar vermelho e lance.</b> O site confere as regras na hora. Com tudo certo, toque em "Lançar".</div></li>
     </ol>
   </section>
+  <details class="abre" id="detHist"><summary>Histórico e voltar para a padrão</summary><div><div id="hist"><p class="dica">Carregando...</p></div>${!lancada && MUD.length ? `<div class="linha" style="margin-top:12px"><button class="btn perigo" id="tudoPadrao">Voltar tudo para a escala padrão</button></div>` : ""}</div></details>
   ${fer.length ? `<details class="abre"><summary>Feriados do mês</summary><div>${fer.map((f) => `<p><b>${f.data.slice(8)}/${f.data.slice(5, 7)}</b> · ${esc(f.nome)}: a loja abre. Quem trabalha ganha folga em até 90 dias ou recebe em dobro (acordo coletivo, cl. 20).</p>`).join("")}</div></details>` : ""}
   ${(E.fora || []).length ? `<details class="abre"><summary>Quem não entra na escala (${E.fora.length})</summary><div><p class="dica">Afastados, aprendizes, limpeza, depósito, administrativo e outros que ficam fora da escala 5x2.</p><table class="tab"><tbody>${E.fora.map((f) => `<tr><td>${esc(f.nome)}</td><td class="mini">${esc(f.cargo || "")}</td><td class="mini">${esc(f.motivo || "")}</td></tr>`).join("")}</tbody></table></div></details>` : ""}
   <details class="abre"><summary>Horário da loja</summary><div>${E.loja.horario.map((h, w) => `<p>${DIAS_SEM[w]}: ${h ? `${esc(h[0])} às ${esc(h[1])}` : "fechada"}${w === 0 && E.loja.domingo === "diaristas" ? " (só diaristas)" : ""}</p>`).join("")}<p class="dica">A equipe pode entrar 15 min antes de abrir e sair 15 min depois de fechar. Gerência, açougue e produção podem passar disso (fica só aviso).</p></div></details>`;
   ligarFaixaAlertas(c);
   const bl = $("#lancar"); if (bl) bl.onclick = confirmarLancar;
   const br = $("#reabrir"); if (br) br.onclick = confirmarReabrir;
+  ligarHistorico(c);
   const sj = $("#salvarJa"); if (sj) sj.onclick = () => salvarComNome();
   const cp = $("#copiar"); if (cp) cp.onclick = () => salvarComNome(true);
   $$("[data-abrir]", c).forEach((b) => (b.onclick = () => abrirVersao(b.dataset.abrir || null)));
@@ -571,7 +591,7 @@ async function confirmarLancar() {
     return;
   }
   modal(`<h2>Lançar "${esc(nomeAberta())}"?</h2>
-    <p>${esc(ESC.loja_nome)} · ${esc(mesTxt(ESC.mes))} · ${E.pessoas.filter((p) => !p.fora).length} pessoas · ${MUD.length} ${MUD.length === 1 ? "mudança" : "mudanças"} em relação à escala padrão${VAL.avisos.length ? ` · ${VAL.avisos.length} avisos` : ""}.</p>
+    <p>${esc(ESC.loja_nome)} · ${esc(mesTxt(ESC.mes))} · ${E.pessoas.filter((p) => !p.fora).length} pessoas${VAL.avisos.length ? ` · ${VAL.avisos.length} avisos` : ""}.</p>
     ${vagas().length ? `<div class="faixa aviso"><span class="selo-vaga">VAGA</span><div>Esta escala tem ${vagas().length === 1 ? "1 vaga" : vagas().length + " vagas"} a contratar (${vagas().map((v) => esc(v.nome)).join(", ")}). Até a contratação, esses horários ficam descobertos.</div></div>` : ""}
     <p class="dica">Esta passa a ser a escala da loja no mês. Depois de lançada ela fica travada; se precisar mudar, dá para reabrir.</p>`,
   [{ rotulo: "Cancelar" }, { rotulo: "Lançar", tipo: "laranja", fn: async () => {
@@ -1272,31 +1292,19 @@ function telaAvisos(c) {
   $$("[data-dia]", c).forEach((b) => (b.onclick = () => { DIA_SEL = +b.dataset.dia; location.hash = "#/dia"; }));
 }
 
-/* ================= MUDANÇAS ================= */
-async function telaMudancas(c) {
-  const por = {}; MUD.forEach((m) => (por[m.pessoa] = por[m.pessoa] || []).push(m));
-  c.innerHTML = `<section class="cartao"><h1>Mudanças</h1>
-    <p class="dica">O que foi mudado em relação à escala padrão (a que veio pronta). A escala padrão fica guardada e nunca se perde.</p>
-    ${MUD.length ? Object.entries(por).map(([pid, ms]) => { const p = E.pessoas.find((q) => q.id === pid); return `<div style="padding:8px 0;border-bottom:1px solid var(--borda)"><p style="margin:4px 0"><b>${esc(p ? p.nome : pid)}</b> <span class="mini">${esc(p ? p.setor : "")}</span></p>${ms.map((m, k) => `<div class="linha" style="justify-content:space-between;padding:3px 0"><span>${esc(m.texto)}</span>${travada() ? "" : `<button class="btn" data-pid="${esc(pid)}" data-k="${k}">Desfazer</button>`}</div>`).join("")}</div>`; }).join("") : `<div class="faixa ok">${ic("check")} Nenhuma mudança. A escala está igual à padrão.</div>`}
-    ${MUD.length && !travada() ? `<div class="linha" style="margin-top:16px"><button class="btn perigo" id="tudoPadrao">Voltar tudo para a escala padrão</button></div>` : ""}
-  </section>
-  <section class="cartao"><h2>Histórico</h2><div id="hist"><p class="dica">Carregando...</p></div></section>`;
-  $$("[data-pid]", c).forEach((b) => (b.onclick = () => {
-    const m = por[b.dataset.pid][+b.dataset.k], p = pessoa(m.pessoa), o = padraoDe(m.pessoa);
-    alterar(() => {
-      if (m.tipo === "nova") E.pessoas = E.pessoas.filter((q) => q.id !== m.pessoa);
-      else if (m.tipo === "fora") delete p.fora;
-      else if (m.tipo === "horas") p.horas = o.horas;
-      else if (m.tipo === "setor") p.setor = o.setor;
-      else if (m.tipo === "dia") p.dias[m.dia] = clone(o.dias[m.dia]);
-    }, "Mudança desfeita.");
-  }));
-  const tp = $("#tudoPadrao"); if (tp) tp.onclick = () => modal(`<h2>Voltar tudo para a escala padrão?</h2><p>Todas as ${MUD.length} mudanças somem e a escala fica igual à que veio pronta.</p>`, [{ rotulo: "Cancelar" }, { rotulo: "Voltar tudo", tipo: "primario", fn: () => { alterar(() => { E = clone(P); }, "Escala voltou ao padrão."); } }]);
-  const { data } = await SB.from("escalas_historico").select("quando,quem,acao").eq("escala_id", ESC.id).order("quando", { ascending: false }).limit(30);
-  const h = $("#hist"); if (!h) return;
-  const linhas = (data || []).map((r) => `<tr><td>${esc(quando(r.quando))}</td><td>${esc(r.quem || "")}</td><td>${r.acao === "reabriu" ? "reabriu a escala" : String(r.acao).startsWith("lancou") ? "lançou " + esc(String(r.acao).replace(/^lancou:?\s*/, "") || "a escala") : esc(r.acao)}</td></tr>`);
-  VERSOES.forEach((v) => linhas.push(`<tr><td>${esc(quando(v.atualizado_em))}</td><td>${esc(v.atualizado_por || "")}</td><td>mexeu em "${esc(v.nome)}"</td></tr>`));
-  h.innerHTML = linhas.length ? `<table class="tab"><tbody>${linhas.join("")}</tbody></table>` : `<p class="dica">Ainda não foi lançada.</p>`;
+/* ================= HISTÓRICO E VOLTAR PARA A PADRÃO (fechado no Início) ================= */
+function ligarHistorico(c) {
+  const tp = $("#tudoPadrao", c); if (tp) tp.onclick = () => modal(`<h2>Voltar tudo para a escala padrão?</h2><p>Tudo o que foi mexido some e a escala fica igual à que veio pronta.</p>`, [{ rotulo: "Cancelar" }, { rotulo: "Voltar tudo", tipo: "primario", fn: () => { alterar(() => { E = clone(P); }, "Escala voltou ao padrão."); } }]);
+  const det = $("#detHist", c); if (!det) return;
+  let carregou = false;
+  det.addEventListener("toggle", async () => {
+    if (!det.open || carregou) return; carregou = true;
+    const { data } = await SB.from("escalas_historico").select("quando,quem,acao").eq("escala_id", ESC.id).order("quando", { ascending: false }).limit(30);
+    const h = $("#hist", det); if (!h) return;
+    const linhas = (data || []).map((r) => `<tr><td>${esc(quando(r.quando))}</td><td>${esc(r.quem || "")}</td><td>${r.acao === "reabriu" ? "reabriu a escala" : String(r.acao).startsWith("lancou") ? "lançou " + esc(String(r.acao).replace(/^lancou:?\s*/, "") || "a escala") : esc(r.acao)}</td></tr>`);
+    VERSOES.forEach((v) => linhas.push(`<tr><td>${esc(quando(v.atualizado_em))}</td><td>${esc(v.atualizado_por || "")}</td><td>mexeu em "${esc(v.nome)}"</td></tr>`));
+    h.innerHTML = linhas.length ? `<table class="tab"><tbody>${linhas.join("")}</tbody></table>` : `<p class="dica">Ainda não foi lançada.</p>`;
+  });
 }
 
 /* ================= COMO USAR ================= */
@@ -1316,7 +1324,7 @@ function telaAjuda(c) {
       <li><div><b>"Lançar escala"</b> no Início. A escala fica travada e o escritório vê que a sua loja lançou. Para mudar depois, toque em "Reabrir".</div></li>
     </ol></section>
   <p class="dica" style="margin:0 4px 14px">As regras da escala estão na aba <a href="#/regras">Regras</a>.</p>
-  <details class="abre"><summary>Tudo fica salvo?</summary><div><p>A escala padrão é fixa e nunca muda. Quando você mexe nela, toque em <b>Salvar</b> e dê um nome (ex.: "Escala 2"): ela vira uma escala sua. A partir daí, cada mudança se salva sozinha (aparece "Salvo às ..." no topo). Dá para fechar e abrir em outro computador.</p><p>No topo você escolhe qual escala abrir. Em "Mudanças" você vê o que mudou em relação à padrão e pode desfazer.</p><p>Esqueceu a senha? Fale com o escritório.</p></div></details>`;
+  <details class="abre"><summary>Tudo fica salvo?</summary><div><p>A escala padrão é fixa e nunca muda. Quando você mexe nela, o site cria na hora uma escala sua (ex.: "Escala 2") e cada mudança se salva sozinha, mesmo com coisas para arrumar. A bolinha vermelha ao lado do nome mostra quantas faltam arrumar (aparece "Salvo às ..." no topo). Dá para fechar e abrir em outro computador.</p><p>No topo você escolhe qual escala abrir. No Início, em "Histórico e voltar para a padrão", você vê quem lançou e quem mexeu, e pode voltar tudo para a escala padrão.</p><p>Esqueceu a senha? Fale com o escritório.</p></div></details>`;
 }
 
 /* ================= REGRAS (para os gerentes lerem) ================= */
