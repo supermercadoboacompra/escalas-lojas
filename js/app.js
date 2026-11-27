@@ -361,6 +361,7 @@ function sanear(A, B) {
     horas: [42, 40, 36, 30, 24, 20].includes(+p.horas) ? +p.horas : horaCheia(B), turno: p.turno === "M" || p.turno === "T" ? p.turno : null,
     saidaMax: horaCombinada(p.saidaMax), entradaMin: horaCombinada(p.entradaMin),
     entradaAtual: n(p.entradaAtual), semDomingo: !!p.semDomingo, semFeriado: !!p.semFeriado, novo: !!p.novo, subGerente: !!p.subGerente,
+    fs: +p.fs >= 1 && +p.fs <= 5 ? +p.fs : null, fq: +p.fq >= 1 && +p.fq <= 5 && +p.fq !== +p.fs ? +p.fq : null,
     vaga: !!p.vaga, diarista: !!p.diarista, inicio: /^\d{4}-\d{2}-\d{2}$/.test(String(p.inicio || "")) ? String(p.inicio) : null,
     fora: p.fora ? { motivo: t(p.fora.motivo, 60) } : undefined,
     dias: B.dias.map((x, i) => {
@@ -369,7 +370,7 @@ function sanear(A, B) {
       return { t: ["F", "D", "X", "A", "V", "N", "L"].includes(c.t) ? c.t : p.diarista ? "L" : "F" };
     }),
   }));
-  out.pessoas.forEach((p) => { if (!p.fora) delete p.fora; if (p.chave == null) delete p.chave; if (!p.vaga) delete p.vaga; if (!p.diarista) delete p.diarista; if (!p.inicio) delete p.inicio; });
+  out.pessoas.forEach((p) => { if (!p.fora) delete p.fora; if (p.chave == null) delete p.chave; if (!p.vaga) delete p.vaga; if (!p.diarista) delete p.diarista; if (!p.inicio) delete p.inicio; if (!p.fs || p.diarista) delete p.fs; if (!p.fq || p.diarista) delete p.fq; });
   // turnos por setor cadastrados pela loja
   const fonteT = (A && A.turnos && typeof A.turnos === "object") ? A.turnos : (B.turnos && typeof B.turnos === "object" ? B.turnos : {});
   out.turnos = {};
@@ -390,7 +391,9 @@ function alterar(fn, msg) {
   if (msg) toast(msg, { rotulo: "Desfazer", fn: desfazer });
   return true;
 }
-function depoisDeMexer() { recalcular(); if (ABERTA) agendarSalvar(); else { SUJO = MUD.length > 0 || ordemMudou() || JSON.stringify(E.turnos || {}) !== JSON.stringify(P.turnos || {}); mostrarSalvo(); if (SUJO) salvarSozinha(); } render(); }
+function depoisDeMexer() { recalcular(); if (ABERTA) agendarSalvar(); else { SUJO = MUD.length > 0 || ordemMudou() || JSON.stringify(E.turnos || {}) !== JSON.stringify(P.turnos || {}) || folgasFixasMudaram(); mostrarSalvo(); if (SUJO) salvarSozinha(); } render(); }
+/* FS/FQ cadastradas diferentes da padrão também contam como mexer */
+function folgasFixasMudaram() { const fx = (L) => JSON.stringify(L.pessoas.filter((p) => p.fs || p.fq).map((p) => [p.id, p.fs || 0, p.fq || 0])); return fx(E) !== fx(P); }
 /* a ordem das pessoas mudou em relação à padrão? (arrastar também conta como mexer) */
 function ordemMudou() { const ids = new Set(P.pessoas.map((p) => p.id)); return E.pessoas.filter((p) => ids.has(p.id)).map((p) => p.id).join("|") !== P.pessoas.map((p) => p.id).join("|"); }
 /* mexeu na padrão: guarda na hora numa escala nova (mesmo com coisas para arrumar), para não perder nada */
@@ -753,14 +756,88 @@ function classeCel(x, c) {
   if (x.fechado) return "fech";
   return c.t === "D" ? "d" : "f";
 }
-function textoCel(x, c) {
+function textoCel(x, c, p) {
   if (c.t === "T") return `<b>${hm(c.ini)}</b><span>${hm(c.fim)}</span>`;
   if (c.t === "X") return "FER";
   if (c.t === "A") return "AFAST";
   if (c.t === "V") return "FÉRIAS";
   if (c.t === "N" || c.t === "L") return "";
   if (x.fechado) return "";
-  return c.t === "D" ? "DOM" : "F";
+  return c.t === "D" ? "DOM" : siglaFolga(p, x);
+}
+/* FS = folga semanal (mesmo dia toda semana) · FQ = folga quinzenal (semanas em que trabalha o domingo) */
+const siglaFolga = (p, x) => (p && p.fs === x.w ? "FS" : p && p.fq === x.w ? "FQ" : "F");
+const NOME_UTIL = { 1: "segunda", 2: "terça", 3: "quarta", 4: "quinta", 5: "sexta" };
+/* aplica FS e FQ em todas as semanas do mês: folga da semana no dia da FS; na semana em que trabalha domingo, a outra folga no dia da FQ */
+function aplicarFolgas(p) {
+  if (p.diarista) return;
+  // só FS cadastrada: a outra folga da semana do domingo trabalhado vai para o dia (seg a sex) que menos quebra regra
+  let fqAuto = p.fq || null;
+  if (p.fs && !p.fq && !semFQ(p)) {
+    const erros = (w) => { const q = clone(p); q.fq = w; aplicarFolgas(q); return validarPessoa(E, q, null).filter((v) => v.nivel === "erro").length; };
+    fqAuto = [1, 2, 3, 4, 5].filter((w) => Math.abs(w - p.fs) > 1).map((w) => ({ w, e: erros(w) })).sort((a, b) => a.e - b.e || Math.abs(b.w - p.fs) - Math.abs(a.w - p.fs))[0]?.w || null;
+  }
+  (E.semanas || []).forEach((S) => {
+    const uteis = S.dias.filter((i) => { const y = E.dias[i]; return y.w >= 1 && y.w <= 5 && !y.fechado && (p.dias[i].t === "T" || p.dias[i].t === "F"); });
+    if (!uteis.length) return;
+    const atuais = uteis.filter((i) => p.dias[i].t === "F");
+    const dom = S.dias.find((i) => E.dias[i].w === 0);
+    const trabDom = dom != null && p.dias[dom].t === "T";
+    // semana cheia: 2 folgas contando domingo, feriado fechado e afastamento; semana incompleta: mantém quantas tinha
+    let n = atuais.length;
+    if (S.cheia) n = Math.max(0, 2 - S.dias.filter((i) => !uteis.includes(i) && (ehFolga(p.dias[i]) || AUSENCIA.includes(p.dias[i].t))).length);
+    const quer = [];
+    const pega = (k) => { if (k != null && !quer.includes(k) && quer.length < n) quer.push(k); };
+    const doDia = (w) => uteis.find((i) => E.dias[i].w === w);
+    if (p.fs) pega(doDia(p.fs));
+    if (fqAuto && (trabDom || dom == null)) pega(doDia(fqAuto));
+    // a outra folga (sem FQ cadastrada): longe da FS e no dia que deixa a menor sequência de dias trabalhados
+    const colada = (k) => p.fs && Math.abs(E.dias[k].w - p.fs) === 1 ? 1 : 0;
+    const maiorSeq = (ds) => { let m = 0, s = 0; ds.forEach((c) => { s = c.t === "T" ? s + 1 : 0; m = Math.max(m, s); }); return m; };
+    const seqCom = (lista) => maiorSeq(p.dias.map((c, i) => (uteis.includes(i) ? (lista.includes(i) ? { t: "F" } : { t: "T" }) : c)));
+    while (quer.length < n) {
+      const cands = uteis.filter((k) => !quer.includes(k)); if (!cands.length) break;
+      const nota = (k) => [colada(k), seqCom(quer.concat(k)), atuais.includes(k) ? 0 : 1, Math.abs(E.dias[k].w - 3)];
+      const menor = (a, b) => { const x = nota(a), y = nota(b); for (let z = 0; z < x.length; z++) if (x[z] !== y[z]) return x[z] - y[z]; return 0; };
+      quer.push(cands.sort(menor)[0]);
+    }
+    uteis.forEach((i) => {
+      if (quer.includes(i)) { if (p.dias[i].t !== "F") p.dias[i] = { t: "F" }; }
+      else if (p.dias[i].t === "F") p.dias[i] = horarioSugerido(p, i);
+    });
+  });
+}
+/* marca FS ou FQ e já espalha no mês todo */
+function fixarFolga(p, tipo, w) {
+  if (tipo === "fs") { if (p.fs === w) { delete p.fs; return `${p.nome}: FS tirada (as folgas ficam onde estão).`; } p.fs = w; if (p.fq && Math.abs(p.fq - w) <= 1) delete p.fq; }
+  else { if (p.fq === w) { delete p.fq; return `${p.nome}: FQ tirada (as folgas ficam onde estão).`; } p.fq = w; }
+  aplicarFolgas(p);
+  return tipo === "fs" ? `FS de ${p.nome} na ${NOME_UTIL[w]}, em todas as semanas do mês.` : `FQ de ${p.nome} na ${NOME_UTIL[w]}, nas semanas em que trabalha domingo.`;
+}
+/* sem FQ: quem folga todo domingo (30h, combinado) ou loja sem a equipe no domingo */
+const semFQ = (p) => p.horas === 30 || p.semDomingo || E.loja.domingo === "fechado" || E.loja.domingo === "diaristas";
+/* simula a FS/FQ: o dia deixaria a pessoa mais de 5 dias seguidos trabalhando? */
+function folgaQuebra(p, tipo, w) {
+  const conta = (q) => validarPessoa(E, q, null).filter((v) => v.nivel === "erro" && /dias seguidos|colada/i.test(v.texto)).length;
+  const q = clone(p); if (q[tipo] === w) return false;
+  fixarFolga(q, tipo, w);
+  return conta(q) > conta(p);
+}
+/* fileira de dias (seg a sex) para FS e FQ */
+function blocoFolgasFixas(p) {
+  let algumRuim = false;
+  const dias = (tipo) => [1, 2, 3, 4, 5].map((w) => {
+    const sel = p[tipo] === w, bloq = tipo === "fq" && p.fs && Math.abs(p.fs - w) <= 1;
+    const ruim = !sel && !bloq && folgaQuebra(p, tipo, w); if (ruim) algumRuim = true;
+    return `<button type="button" class="ff-dia${sel ? " sel" : ""}${ruim ? " ruim" : ""}" data-ff="${tipo}" data-w="${w}" ${bloq ? `disabled title="${w === p.fs ? "Já é a FS" : "A FQ não pode ficar colada na FS"}"` : ruim ? `title="Neste dia a pessoa passa de 5 dias seguidos trabalhando"` : ""} aria-pressed="${sel}">${DIAS_CURTO[w]}</button>`;
+  }).join("");
+  const linhas = `<div class="ff-linha"><span class="ff-sigla">FS</span><span class="ff-txt"><b>Folga semanal</b><small>${p.fs ? `toda ${NOME_UTIL[p.fs]}` : "mesmo dia toda semana"}</small></span><span class="ff-dias">${dias("fs")}</span></div>
+    ${semFQ(p) ? `<p class="mini" style="margin:8px 0 0">Folga todo domingo: não tem FQ.</p>` : `<div class="ff-linha"><span class="ff-sigla q">FQ</span><span class="ff-txt"><b>Folga quinzenal</b><small>${p.fq ? `${NOME_UTIL[p.fq]}, na semana em que trabalha domingo` : "na semana em que trabalha domingo"}</small></span><span class="ff-dias">${dias("fq")}</span></div>`}`;
+  return `<div class="folgas-fixas"><div class="turnos-tit"><b>Folgas do mês</b></div>
+    <p class="mini" style="margin:-4px 0 10px">Toque no dia: vale para todas as semanas do mês. Toque de novo para tirar.</p>
+    ${linhas}
+    ${algumRuim ? `<p class="mini ff-legenda"><i></i>Dia com ponto vermelho: a pessoa passaria de 5 dias seguidos trabalhando.</p>` : ""}
+  </div>`;
 }
 /* vagas: pessoa que ainda vai ser contratada ("colaborador fantasma") */
 const vagas = () => E.pessoas.filter((p) => p.vaga && !p.fora);
@@ -825,7 +902,7 @@ function telaEscala(c) {
       linhas += `<tr data-linha="${esc(p.id)}" class="${p.fora ? "pessoa-fora" : ""}${p.vaga ? " linha-vaga" : ""}${p.diarista ? " linha-diarista" : ""}"><td class="nome${podeMover ? " com-alca" : ""}" data-p="${esc(p.id)}">${podeMover ? `<span class="alca" data-mover="${esc(p.id)}" role="button" tabindex="0" title="Arraste para mudar de lugar" aria-label="Mudar ${esc(p.nome)} de lugar: arraste, ou use as setas para cima e para baixo">${ic("arrastar")}</span>` : ""}<b>${seloDe(p)}${esc(p.nome)}${errosDia[p.id] ? '<span class="marca-erro"></span>' : ""}</b><small>${p.diarista ? `${diasDoDiarista(p)} ${diasDoDiarista(p) === 1 ? "dia" : "dias"} no mês · até 8h por dia` : p.horas + "h"}${p.turno ? " · turno " + (p.turno === "M" ? "manhã" : "tarde") : ""}${p.vaga ? (p.inicio ? " · começa " + isoBr(p.inicio) : " · a contratar") : p.diarista ? "" : p.novo ? " · incluída" : ""}${p.fora ? " · fora da escala" : ""}</small></td>`;
       E.dias.forEach((x, i) => {
         const cc = p.dias[i], k = p.id + ":" + i;
-        linhas += `<td class="${iniSemana(i) ? "semana-ini" : ""}"><div class="cel ${classeCel(x, cc)}${mudou[k] ? " mudou" : ""}${errosDia[k] ? " tem-erro" : avisosDia[k] ? " tem-aviso" : ""}" data-p="${esc(p.id)}" data-i="${i}" title="${esc(p.nome)} · ${DIAS_SEM[x.w]} ${dataTxt(x)}">${textoCel(x, cc)}</div></td>`;
+        linhas += `<td class="${iniSemana(i) ? "semana-ini" : ""}"><div class="cel ${classeCel(x, cc)}${mudou[k] ? " mudou" : ""}${errosDia[k] ? " tem-erro" : avisosDia[k] ? " tem-aviso" : ""}" data-p="${esc(p.id)}" data-i="${i}" title="${esc(p.nome)} · ${DIAS_SEM[x.w]} ${dataTxt(x)}">${textoCel(x, cc, p)}</div></td>`;
       });
       linhas += "</tr>";
     });
@@ -1181,8 +1258,16 @@ function abrirCelula(pid, i) {
           <label class="marcar"><input type="checkbox" data-alc="mes" ${alcance === "mes" ? "checked" : ""}><span>Usar este horário em todos os dias de trabalho deste mês</span></label>
           ${alcance ? `<p class="mini" style="margin:0">Vale para ${nTrab(outros)} ${nTrab(outros) === 1 ? "dia" : "dias"}. As folgas não mudam; em dia que a loja abre ou fecha em outro horário, o horário se ajusta.</p>` : ""}</div>` : ""}
       ` : !travar && sem && (r.t === "F" || r.t === "D") ? `
+        ${r.t === "F" && x.w >= 1 && x.w <= 5 && !x.fechado ? (() => {
+          const fqBloq = p.fs && Math.abs(p.fs - x.w) <= 1, ehFS = p.fs === x.w, ehFQ = p.fq === x.w;
+          const rFS = !ehFS && folgaQuebra(p, "fs", x.w), rFQ = !ehFQ && !fqBloq && !semFQ(p) && folgaQuebra(p, "fq", x.w);
+          const AV = `<small class="ruim">passa de 5 dias seguidos</small>`;
+          return `<div class="ff-fixar"><p style="margin:0 0 6px"><b>Repetir no mês todo</b></p>
+          <div class="ff-fixar-bts"><button type="button" class="ff-bt${ehFS ? " sel" : ""}" id="fixFS" ${ehFS ? "disabled" : ""}><span class="ff-sigla">FS</span><span><b>${ehFS ? "Já é a folga semanal" : "Folga semanal"}</b><small>toda ${NOME_UTIL[x.w]} do mês</small>${rFS ? AV : ""}</span></button>
+          ${semFQ(p) ? "" : `<button type="button" class="ff-bt${ehFQ ? " sel" : ""}" id="fixFQ" ${ehFQ || fqBloq ? "disabled" : ""}><span class="ff-sigla q">FQ</span><span><b>${ehFQ ? "Já é a folga quinzenal" : "Folga quinzenal"}</b><small>${fqBloq && !ehFS ? "não pode ficar colada na FS" : ehFS ? "este dia já é a FS" : `${NOME_UTIL[x.w]}, na semana em que trabalha domingo`}</small>${rFQ ? AV : ""}</span></button>`}</div></div>`;
+        })() : ""}
         <p style="margin-bottom:4px"><b>Trocar esta folga de dia</b></p><p class="dica">Toque no dia da semana em que a pessoa vai folgar no lugar deste. Ela passa a trabalhar hoje.</p>
-        <div class="semana-mini">${sem.dias.map((j) => { const y = E.dias[j], cj = p.dias[j]; return `<button data-j="${j}" class="${cj.t === "T" ? "" : cj.t === "D" ? "d" : "f"} ${j === i ? "atual" : ""}" ${j === i || cj.t !== "T" || y.fechado ? "disabled" : ""}>${DIAS_CURTO[y.w]}<br><b>${String(y.d).padStart(2, "0")}</b><br>${cj.t === "T" ? hm(cj.ini) : cj.t === "D" ? "DOM" : "F"}</button>`; }).join("")}</div>` : ""}
+        <div class="semana-mini">${sem.dias.map((j) => { const y = E.dias[j], cj = p.dias[j]; return `<button data-j="${j}" class="${cj.t === "T" ? "" : cj.t === "D" ? "d" : "f"} ${j === i ? "atual" : ""}" ${j === i || cj.t !== "T" || y.fechado ? "disabled" : ""}>${DIAS_CURTO[y.w]}<br><b>${String(y.d).padStart(2, "0")}</b><br>${cj.t === "T" ? hm(cj.ini) : cj.t === "D" ? "DOM" : siglaFolga(p, y)}</button>`; }).join("")}</div>` : ""}
       `}
       ${probs.length ? `<div class="lista-problemas"><p style="margin:10px 0 0"><b>Conferência das regras</b></p>${probs.map(itemProblema).join("")}</div>` : x.fechado ? "" : `<div class="faixa ok" style="margin-top:10px">${ic("check")} Nenhuma regra quebrada para esta pessoa.</div>`}
       ${!travar && r.t !== "X" ? `<div class="linha" style="margin-top:16px"><button class="btn primario grande" id="salvar" style="flex:1">Salvar</button><button class="btn grande" id="cancelar">Cancelar</button></div>${mudouDoPadrao ? `<p style="margin-top:10px"><button class="btn" id="padrao">Voltar ao padrão (${esc(diaTxt(o.dias[i]))})</button></p>` : ""}` : ""}
@@ -1210,6 +1295,9 @@ function abrirCelula(pid, i) {
       abrirCelula(pid, i);
     }));
     if (g("#padrao")) g("#padrao").onclick = () => { r = clone(o.dias[i]); desenhar(); };
+    const fixar = (tipo) => { let msg = ""; if (alterar(() => { p.dias[i] = { t: "F" }; msg = fixarFolga(p, tipo, x.w); }, "")) toast(msg, { rotulo: "Desfazer", fn: desfazer }); abrirCelula(pid, i); };
+    if (g("#fixFS")) g("#fixFS").onclick = () => fixar("fs");
+    if (g("#fixFQ")) g("#fixFQ").onclick = () => fixar("fq");
     g("#cancelar").onclick = fecharPainel;
     g("#salvar").onclick = () => {
       const outros = r.t === "T" ? alvos() : [];
@@ -1263,6 +1351,7 @@ function abrirPessoa(pid) {
     </div>
     ${p.setor !== "Gerência" ? `<label class="marcar"><input type="checkbox" id="pSub" ${p.subGerente ? "checked" : ""} ${travar ? "disabled" : ""}><span><b>Substitui o gerente</b>: pode abrir e fechar a loja quando não tiver gerente (conta para a regra de 1 gerente na abertura e 1 no fechamento).</span></label>` : ""}
     ${restr.length ? `<p class="dica"><b>Combinado:</b> ${restr.map(esc).join(" · ")}</p>` : ""}
+    ${travar || p.fora || p.diarista ? "" : blocoFolgasFixas(p)}
     ${travar || p.fora ? "" : (() => {
       const cad = turnosDe(p.setor), sug = horariosMaisUsados(p.setor), trabalho = p.dias.filter((c) => c.t === "T");
       const usa = (t) => trabalho.length && trabalho.every((c) => mesmoHorario(c, t));
@@ -1290,9 +1379,10 @@ function abrirPessoa(pid) {
   $$("[data-pturno]", pn).forEach((b) => (b.onclick = () => aplicarTurnoMes(turnosDe(p.setor).find((x) => x.id === b.dataset.pturno))));
   const psug = horariosMaisUsados(p.setor);
   $$("[data-psug]", pn).forEach((b) => (b.onclick = () => aplicarTurnoMes(psug[+b.dataset.psug])));
+  $$("[data-ff]", pn).forEach((b) => (b.onclick = () => { let msg = ""; if (alterar(() => { msg = fixarFolga(p, b.dataset.ff, +b.dataset.w); }, "")) toast(msg, { rotulo: "Desfazer", fn: desfazer }); abrirPessoa(pid); }));
   const pnt = $("#pNovoTurno", pn); if (pnt) pnt.onclick = () => guardarTurno(p.setor, p.dias.find((c) => c.t === "T"), () => abrirPessoa(pid));
   if ($("#pHoras", pn)) $("#pHoras", pn).onchange = (e) => { alterar(() => { p.horas = +e.target.value; }, `Agora ${e.target.value}h por semana. Confira os horários.`); abrirPessoa(pid); };
-  const bp = $("#pPadrao", pn); if (bp) bp.onclick = () => { alterar(() => { Object.assign(p, clone(o)); }, "Pessoa voltou ao padrão."); abrirPessoa(pid); };
+  const bp = $("#pPadrao", pn); if (bp) bp.onclick = () => { alterar(() => { delete p.fs; delete p.fq; Object.assign(p, clone(o)); }, "Pessoa voltou ao padrão."); abrirPessoa(pid); };
   const bv = $("#pVolta", pn); if (bv) bv.onclick = () => { alterar(() => { delete p.fora; }, "Voltou para a escala."); abrirPessoa(pid); };
   const ba = $("#pApaga", pn); if (ba) ba.onclick = () => { alterar(() => { E.pessoas = E.pessoas.filter((q) => q.id !== pid); }, p.vaga ? "Vaga apagada." : p.diarista ? "Diarista apagado." : "Pessoa tirada."); fecharPainel(); };
   const bf = $("#pFora", pn); if (bf) bf.onclick = () => modal(`<h2>Tirar ${esc(p.nome)} da escala</h2><p class="dica">A pessoa some da escala deste mês (dá para trazer de volta depois).</p>
@@ -1524,6 +1614,7 @@ function resumoPessoa(p) {
   const lojaDom = E.loja.domingo;
   const domingo = lojaDom === "fechado" ? "loja fechada" : lojaDom === "diaristas" ? "folga (domingo com diaristas)" : domAberto === 0 ? "-" : domTrab === 0 ? "folga todo domingo" : `trabalha ${domTrab} de ${domAberto} domingos`;
   const turno = horario ? (minDe(horario[0].slice(0, 5)) < 660 ? "manhã" : "tarde") : "";
+  if (p.fs) return { folgaFixa: `FS ${DIAS_SEM[p.fs]}${p.fq ? ` · FQ ${DIAS_SEM[p.fq]}` : ""}`, horario: horario ? horario[0] : "sem dias de trabalho", turno, domingo };
   return { folgaFixa: fixa ? DIAS_SEM[+fixa[0]] : "-", horario: horario ? horario[0] : "sem dias de trabalho", turno, domingo };
 }
 function telaEquipe(c) {
@@ -1807,7 +1898,7 @@ function imprimir() {
   const setores = setoresDe(E);
   const cab = `<tr><th>Nome</th>${E.dias.map((x) => `<th>${LETRA[x.w]}<br>${x.d}</th>`).join("")}</tr>`;
   $("#impressao").innerHTML = `<h1>${esc(ESC.loja_nome)} · escala de ${esc(mesTxt(ESC.mes))}${ESC.status === "lancada" ? ` · lançada em ${esc(quando(ESC.lancada_em))}` : " · NÃO LANÇADA (rascunho)"}</h1>
-    <table>${cab}${setores.map((s) => `<tr><td colspan="${E.dias.length + 1}" class="n"><b>${esc(s)}</b></td></tr>` + E.pessoas.filter((p) => !p.fora && p.setor === s).map((p) => `<tr><td class="n">${esc(nomeExp(p))}${p.horas !== 42 ? ` (${p.horas}h)` : ""}</td>${E.dias.map((x, i) => { const c = p.dias[i]; return `<td class="${c.t === "T" ? "" : c.t === "D" ? "d" : "f"}">${c.t === "T" ? `${hm(c.ini)}<br>${hm(c.fim)}` : c.t === "X" ? "FER" : c.t === "A" ? "AFAST" : c.t === "V" ? "FÉRIAS" : c.t === "N" ? "-" : x.fechado ? "" : c.t === "D" ? "DOM" : "F"}</td>`; }).join("")}</tr>`).join("")).join("")}</table>
+    <table>${cab}${setores.map((s) => `<tr><td colspan="${E.dias.length + 1}" class="n"><b>${esc(s)}</b></td></tr>` + E.pessoas.filter((p) => !p.fora && p.setor === s).map((p) => `<tr><td class="n">${esc(nomeExp(p))}${p.horas !== 42 ? ` (${p.horas}h)` : ""}</td>${E.dias.map((x, i) => { const c = p.dias[i]; return `<td class="${c.t === "T" ? "" : c.t === "D" ? "d" : "f"}">${c.t === "T" ? `${hm(c.ini)}<br>${hm(c.fim)}` : c.t === "X" ? "FER" : c.t === "A" ? "AFAST" : c.t === "V" ? "FÉRIAS" : c.t === "N" ? "-" : x.fechado ? "" : c.t === "D" ? "DOM" : siglaFolga(p, x)}</td>`; }).join("")}</tr>`).join("")).join("")}</table>
     <p style="margin-top:4px">Em cada dia: entrada em cima, saída embaixo. F = folga. DOM = folga no domingo. Impresso em ${new Date().toLocaleString("pt-BR")}.</p>`;
   window.print();
 }

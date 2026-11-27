@@ -300,3 +300,35 @@ details.dia-dentro #diaDentro > .cartao { box-shadow: none; border: 0; padding: 
 .cab-fixo tr.conta th { font-size: 10px; font-weight: 500; color: var(--texto3); padding: 2px 0; }
 .cab-fixo th.semana-ini { border-left: 2px solid var(--texto3); }
 @media print { .cab-fixo { display: none !important; } }
+
+/* ===== Folgas do mês: FS (semanal) e FQ (quinzenal) ===== */
+.folgas-fixas { margin: 4px 0 14px; padding: 12px 14px; border: 1.5px solid var(--borda); border-radius: 14px; background: var(--sup); }
+.ff-linha { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; align-items: center; padding: 8px 0; }
+.ff-linha + .ff-linha { border-top: 1px solid var(--borda); }
+.ff-sigla { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 26px; border-radius: 8px; background: var(--marinho); color: #fff; font-weight: 800; font-size: .78rem; letter-spacing: .04em; flex: none; }
+.ff-sigla.q { background: var(--laranja); }
+.ff-txt { display: flex; flex-direction: column; line-height: 1.2; }
+.ff-txt b { font-size: .9rem; }
+.ff-txt small { font-size: .76rem; color: var(--texto2); }
+.ff-dias { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.ff-dia { height: 38px; border-radius: 10px; border: 1.5px solid var(--borda); background: var(--sup2); color: var(--texto); font: inherit; font-weight: 700; font-size: .85rem; cursor: pointer; transition: border-color .15s, background .15s, transform .15s var(--mola); }
+.ff-dia:hover:not(:disabled) { border-color: var(--laranja); }
+.ff-dia:active:not(:disabled) { transform: scale(.95); }
+.ff-dia.sel { border-color: var(--laranja); background: color-mix(in srgb, var(--laranja) 12%, var(--sup)); color: var(--texto); box-shadow: 0 6px 16px -10px rgba(242, 101, 34, .9); }
+.ff-dia:disabled { opacity: .35; cursor: not-allowed; }
+.ff-fixar { margin: 12px 0 14px; }
+.ff-fixar-bts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ff-bt { display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--borda); background: var(--sup); color: inherit; font: inherit; cursor: pointer; transition: border-color .15s, background .15s, transform .15s var(--mola); }
+.ff-bt > span:last-child { display: flex; flex-direction: column; line-height: 1.2; }
+.ff-bt b { font-size: .88rem; }
+.ff-bt small { font-size: .74rem; color: var(--texto2); }
+.ff-bt:hover:not(:disabled) { border-color: var(--laranja); }
+.ff-bt:active:not(:disabled) { transform: scale(.97); }
+.ff-bt.sel { border-color: var(--laranja); background: color-mix(in srgb, var(--laranja) 9%, var(--sup)); cursor: default; }
+.ff-bt:disabled:not(.sel) { opacity: .45; cursor: not-allowed; }
+@media (max-width: 420px) { .ff-fixar-bts { grid-template-columns: 1fr; } }
+.ff-dia { position: relative; }
+.ff-dia.ruim::after, .ff-legenda i { content: ""; position: absolute; top: 5px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--erro); }
+.ff-legenda { display: flex; align-items: center; gap: 7px; margin: 8px 0 0; }
+.ff-legenda i { position: static; flex: none; }
+.ff-bt small.ruim { color: var(--erro); }
