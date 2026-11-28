@@ -360,7 +360,7 @@ function sanear(A, B) {
     id: t(p.id, 40), chave: n(p.chave), nome: t(p.nome), nomeCompleto: t(p.nomeCompleto), cargo: t(p.cargo), setor: t(p.setor, 40),
     horas: [42, 40, 36, 30, 24, 20].includes(+p.horas) ? +p.horas : horaCheia(B), turno: p.turno === "M" || p.turno === "T" ? p.turno : null,
     saidaMax: horaCombinada(p.saidaMax), entradaMin: horaCombinada(p.entradaMin),
-    entradaAtual: n(p.entradaAtual), semDomingo: !!p.semDomingo, semFeriado: !!p.semFeriado, novo: !!p.novo, subGerente: !!p.subGerente,
+    entradaAtual: n(p.entradaAtual), semDomingo: !!p.semDomingo, semFeriado: !!p.semFeriado, novo: !!p.novo, subGerente: !!p.subGerente, grupo: ["A", "I", "F"].includes(p.grupo) ? p.grupo : null,
     fs: +p.fs >= 1 && +p.fs <= 5 ? +p.fs : null, fq: +p.fq >= 1 && +p.fq <= 5 && +p.fq !== +p.fs ? +p.fq : null,
     vaga: !!p.vaga, diarista: !!p.diarista, inicio: /^\d{4}-\d{2}-\d{2}$/.test(String(p.inicio || "")) ? String(p.inicio) : null,
     fora: p.fora ? { motivo: t(p.fora.motivo, 60) } : undefined,
@@ -370,7 +370,7 @@ function sanear(A, B) {
       return { t: ["F", "D", "X", "A", "V", "N", "L"].includes(c.t) ? c.t : p.diarista ? "L" : "F" };
     }),
   }));
-  out.pessoas.forEach((p) => { if (!p.fora) delete p.fora; if (p.chave == null) delete p.chave; if (!p.vaga) delete p.vaga; if (!p.diarista) delete p.diarista; if (!p.inicio) delete p.inicio; if (!p.fs || p.diarista) delete p.fs; if (!p.fq || p.diarista) delete p.fq; });
+  out.pessoas.forEach((p) => { if (!p.fora) delete p.fora; if (p.chave == null) delete p.chave; if (!p.vaga) delete p.vaga; if (!p.diarista) delete p.diarista; if (!p.inicio) delete p.inicio; if (!p.fs || p.diarista) delete p.fs; if (!p.fq || p.diarista) delete p.fq; if (!p.grupo) delete p.grupo; });
   // turnos por setor cadastrados pela loja
   const fonteT = (A && A.turnos && typeof A.turnos === "object") ? A.turnos : (B.turnos && typeof B.turnos === "object" ? B.turnos : {});
   out.turnos = {};
@@ -393,7 +393,7 @@ function alterar(fn, msg) {
 }
 function depoisDeMexer() { recalcular(); if (ABERTA) agendarSalvar(); else { SUJO = MUD.length > 0 || ordemMudou() || JSON.stringify(E.turnos || {}) !== JSON.stringify(P.turnos || {}) || folgasFixasMudaram(); mostrarSalvo(); if (SUJO) salvarSozinha(); } render(); }
 /* FS/FQ cadastradas diferentes da padrão também contam como mexer */
-function folgasFixasMudaram() { const fx = (L) => JSON.stringify(L.pessoas.filter((p) => p.fs || p.fq).map((p) => [p.id, p.fs || 0, p.fq || 0])); return fx(E) !== fx(P); }
+function folgasFixasMudaram() { const fx = (L) => JSON.stringify(L.pessoas.filter((p) => p.fs || p.fq || p.grupo).map((p) => [p.id, p.fs || 0, p.fq || 0, p.grupo || ""])); return fx(E) !== fx(P); }
 /* a ordem das pessoas mudou em relação à padrão? (arrastar também conta como mexer) */
 function ordemMudou() { const ids = new Set(P.pessoas.map((p) => p.id)); return E.pessoas.filter((p) => ids.has(p.id)).map((p) => p.id).join("|") !== P.pessoas.map((p) => p.id).join("|"); }
 /* mexeu na padrão: guarda na hora numa escala nova (mesmo com coisas para arrumar), para não perder nada */
@@ -775,7 +775,7 @@ function aplicarFolgas(p) {
   let fqAuto = p.fq || null;
   if (p.fs && !p.fq && !semFQ(p)) {
     const erros = (w) => { const q = clone(p); q.fq = w; aplicarFolgas(q); return validarPessoa(E, q, null).filter((v) => v.nivel === "erro").length; };
-    fqAuto = [1, 2, 3, 4, 5].filter((w) => Math.abs(w - p.fs) > 1).map((w) => ({ w, e: erros(w) })).sort((a, b) => a.e - b.e || Math.abs(b.w - p.fs) - Math.abs(a.w - p.fs))[0]?.w || null;
+    fqAuto = [1, 2, 3, 4, 5].filter((w) => w !== p.fs).map((w) => ({ w, e: erros(w) })).sort((a, b) => a.e - b.e || Math.abs(b.w - p.fs) - Math.abs(a.w - p.fs))[0]?.w || null;
   }
   (E.semanas || []).forEach((S) => {
     const uteis = S.dias.filter((i) => { const y = E.dias[i]; return y.w >= 1 && y.w <= 5 && !y.fechado && (p.dias[i].t === "T" || p.dias[i].t === "F"); });
@@ -791,13 +791,12 @@ function aplicarFolgas(p) {
     const doDia = (w) => uteis.find((i) => E.dias[i].w === w);
     if (p.fs) pega(doDia(p.fs));
     if (fqAuto && (trabDom || dom == null)) pega(doDia(fqAuto));
-    // a outra folga (sem FQ cadastrada): longe da FS e no dia que deixa a menor sequência de dias trabalhados
-    const colada = (k) => p.fs && Math.abs(E.dias[k].w - p.fs) === 1 ? 1 : 0;
+    // a outra folga (sem FQ cadastrada): no dia que deixa a menor sequência de dias trabalhados
     const maiorSeq = (ds) => { let m = 0, s = 0; ds.forEach((c) => { s = c.t === "T" ? s + 1 : 0; m = Math.max(m, s); }); return m; };
     const seqCom = (lista) => maiorSeq(p.dias.map((c, i) => (uteis.includes(i) ? (lista.includes(i) ? { t: "F" } : { t: "T" }) : c)));
     while (quer.length < n) {
       const cands = uteis.filter((k) => !quer.includes(k)); if (!cands.length) break;
-      const nota = (k) => [colada(k), seqCom(quer.concat(k)), atuais.includes(k) ? 0 : 1, Math.abs(E.dias[k].w - 3)];
+      const nota = (k) => [seqCom(quer.concat(k)), atuais.includes(k) ? 0 : 1, Math.abs(E.dias[k].w - 3)];
       const menor = (a, b) => { const x = nota(a), y = nota(b); for (let z = 0; z < x.length; z++) if (x[z] !== y[z]) return x[z] - y[z]; return 0; };
       quer.push(cands.sort(menor)[0]);
     }
@@ -809,7 +808,7 @@ function aplicarFolgas(p) {
 }
 /* marca FS ou FQ e já espalha no mês todo */
 function fixarFolga(p, tipo, w) {
-  if (tipo === "fs") { if (p.fs === w) { delete p.fs; return `${p.nome}: FS tirada (as folgas ficam onde estão).`; } p.fs = w; if (p.fq && Math.abs(p.fq - w) <= 1) delete p.fq; }
+  if (tipo === "fs") { if (p.fs === w) { delete p.fs; return `${p.nome}: FS tirada (as folgas ficam onde estão).`; } p.fs = w; if (p.fq === w) delete p.fq; }
   else { if (p.fq === w) { delete p.fq; return `${p.nome}: FQ tirada (as folgas ficam onde estão).`; } p.fq = w; }
   aplicarFolgas(p);
   return tipo === "fs" ? `FS de ${p.nome} na ${NOME_UTIL[w]}, em todas as semanas do mês.` : `FQ de ${p.nome} na ${NOME_UTIL[w]}, nas semanas em que trabalha domingo.`;
@@ -818,7 +817,7 @@ function fixarFolga(p, tipo, w) {
 const semFQ = (p) => p.horas === 30 || p.semDomingo || E.loja.domingo === "fechado" || E.loja.domingo === "diaristas";
 /* simula a FS/FQ: o dia deixaria a pessoa mais de 5 dias seguidos trabalhando? */
 function folgaQuebra(p, tipo, w) {
-  const conta = (q) => validarPessoa(E, q, null).filter((v) => v.nivel === "erro" && /dias seguidos|colada/i.test(v.texto)).length;
+  const conta = (q) => validarPessoa(E, q, null).filter((v) => v.nivel === "erro" && /dias seguidos/i.test(v.texto)).length;
   const q = clone(p); if (q[tipo] === w) return false;
   fixarFolga(q, tipo, w);
   return conta(q) > conta(p);
@@ -827,9 +826,9 @@ function folgaQuebra(p, tipo, w) {
 function blocoFolgasFixas(p) {
   let algumRuim = false;
   const dias = (tipo) => [1, 2, 3, 4, 5].map((w) => {
-    const sel = p[tipo] === w, bloq = tipo === "fq" && p.fs && Math.abs(p.fs - w) <= 1;
+    const sel = p[tipo] === w, bloq = tipo === "fq" && p.fs === w;
     const ruim = !sel && !bloq && folgaQuebra(p, tipo, w); if (ruim) algumRuim = true;
-    return `<button type="button" class="ff-dia${sel ? " sel" : ""}${ruim ? " ruim" : ""}" data-ff="${tipo}" data-w="${w}" ${bloq ? `disabled title="${w === p.fs ? "Já é a FS" : "A FQ não pode ficar colada na FS"}"` : ruim ? `title="Neste dia a pessoa passa de 5 dias seguidos trabalhando"` : ""} aria-pressed="${sel}">${DIAS_CURTO[w]}</button>`;
+    return `<button type="button" class="ff-dia${sel ? " sel" : ""}${ruim ? " ruim" : ""}" data-ff="${tipo}" data-w="${w}" ${bloq ? `disabled title="Já é a FS"` : ruim ? `title="Neste dia a pessoa passa de 5 dias seguidos trabalhando"` : ""} aria-pressed="${sel}">${DIAS_CURTO[w]}</button>`;
   }).join("");
   const linhas = `<div class="ff-linha"><span class="ff-sigla">FS</span><span class="ff-txt"><b>Folga semanal</b><small>${p.fs ? `toda ${NOME_UTIL[p.fs]}` : "mesmo dia toda semana"}</small></span><span class="ff-dias">${dias("fs")}</span></div>
     ${semFQ(p) ? `<p class="mini" style="margin:8px 0 0">Folga todo domingo: não tem FQ.</p>` : `<div class="ff-linha"><span class="ff-sigla q">FQ</span><span class="ff-txt"><b>Folga quinzenal</b><small>${p.fq ? `${NOME_UTIL[p.fq]}, na semana em que trabalha domingo` : "na semana em que trabalha domingo"}</small></span><span class="ff-dias">${dias("fq")}</span></div>`}`;
@@ -884,6 +883,25 @@ function proximoNomeVaga(setor) {
   let k = 1; while (E.pessoas.some((p) => p.nome === `Vaga ${setor} ${k}`)) k++;
   return `Vaga ${setor} ${k}`;
 }
+/* SUBGRUPOS dentro do setor: abertura, intermediário e fechamento.
+   Automático pelo horário que a pessoa mais faz no mês (entra até 30 min depois de abrir = abertura;
+   sai até 30 min antes de fechar ou depois = fechamento; o resto = intermediário). Na ficha dá para fixar à mão (p.grupo). */
+const SUBGRUPOS = [["A", "Abertura"], ["I", "Intermediário"], ["F", "Fechamento"]];
+const NOME_SUBGRUPO = Object.fromEntries(SUBGRUPOS);
+function subgrupoAuto(p) {
+  const n = { A: 0, I: 0, F: 0 };
+  p.dias.forEach((c, i) => {
+    const x = E.dias[i]; if (c.t !== "T" || x.fechado || x.abre == null) return;
+    const abre = c.ini <= x.abre + 30, fecha = c.fim >= x.fecha - 30;
+    if (abre && fecha) return; // dia inteiro (dia curto): não diz nada
+    n[abre ? "A" : fecha ? "F" : "I"]++;
+  });
+  const [g, q] = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
+  return q ? g : "I";
+}
+const subgrupoDe = (p) => (NOME_SUBGRUPO[p.grupo] ? p.grupo : subgrupoAuto(p));
+/* mesma lista, na ordem abertura > intermediário > fechamento (dentro de cada um, a ordem que a loja deixou) */
+const porSubgrupo = (ps) => SUBGRUPOS.flatMap(([g]) => ps.filter((p) => subgrupoDe(p) === g));
 function telaEscala(c) {
   const setores = setoresDe(E), lancada = travada();
   const errosDia = {}, avisosDia = {};
@@ -898,7 +916,10 @@ function telaEscala(c) {
   setores.concat(FILTRO.so === "fora" ? [...new Set(E.pessoas.filter((p) => p.fora).map((p) => p.setor))].filter((s) => !setores.includes(s)) : []).forEach((s) => {
     const ps = visiveis.filter((p) => p.setor === s); if (!ps.length) return;
     linhas += `<tr class="setor"><td colspan="${E.dias.length + 1}">${esc(s)} · ${ps.length}</td></tr>`;
-    ps.forEach((p) => {
+    let gAnt = null;
+    porSubgrupo(ps).forEach((p) => {
+      const g = subgrupoDe(p);
+      if (g !== gAnt) { gAnt = g; const n = ps.filter((q) => subgrupoDe(q) === g).length; linhas += `<tr class="subgrupo sg-${g}"><td colspan="${E.dias.length + 1}"><span>${NOME_SUBGRUPO[g]} · ${n}</span></td></tr>`; }
       linhas += `<tr data-linha="${esc(p.id)}" class="${p.fora ? "pessoa-fora" : ""}${p.vaga ? " linha-vaga" : ""}${p.diarista ? " linha-diarista" : ""}"><td class="nome${podeMover ? " com-alca" : ""}" data-p="${esc(p.id)}">${podeMover ? `<span class="alca" data-mover="${esc(p.id)}" role="button" tabindex="0" title="Arraste para mudar de lugar" aria-label="Mudar ${esc(p.nome)} de lugar: arraste, ou use as setas para cima e para baixo">${ic("arrastar")}</span>` : ""}<b>${seloDe(p)}${esc(p.nome)}${errosDia[p.id] ? '<span class="marca-erro"></span>' : ""}</b><small>${p.diarista ? `${diasDoDiarista(p)} ${diasDoDiarista(p) === 1 ? "dia" : "dias"} no mês · até 8h por dia` : p.horas + "h"}${p.turno ? " · turno " + (p.turno === "M" ? "manhã" : "tarde") : ""}${p.vaga ? (p.inicio ? " · começa " + isoBr(p.inicio) : " · a contratar") : p.diarista ? "" : p.novo ? " · incluída" : ""}${p.fora ? " · fora da escala" : ""}</small></td>`;
       E.dias.forEach((x, i) => {
         const cc = p.dias[i], k = p.id + ":" + i;
@@ -997,7 +1018,7 @@ function marcarMovida(c) {
 }
 function ligarArrastar(c) {
   const grade = $(".grade-escala", c); if (!grade) return;
-  const vizinhos = (id) => [...grade.querySelectorAll("tr[data-linha]")].filter((tr) => { const q = pessoa(tr.dataset.linha); return q && q.setor === pessoa(id).setor; });
+  const vizinhos = (id) => [...grade.querySelectorAll("tr[data-linha]")].filter((tr) => { const q = pessoa(tr.dataset.linha); const p = pessoa(id); return q && q.setor === p.setor && subgrupoDe(q) === subgrupoDe(p); });
   // teclado: setas sobem e descem a pessoa
   $$(".alca", grade).forEach((a) => (a.onkeydown = (e) => {
     if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
@@ -1259,12 +1280,12 @@ function abrirCelula(pid, i) {
           ${alcance ? `<p class="mini" style="margin:0">Vale para ${nTrab(outros)} ${nTrab(outros) === 1 ? "dia" : "dias"}. As folgas não mudam; em dia que a loja abre ou fecha em outro horário, o horário se ajusta.</p>` : ""}</div>` : ""}
       ` : !travar && sem && (r.t === "F" || r.t === "D") ? `
         ${r.t === "F" && x.w >= 1 && x.w <= 5 && !x.fechado ? (() => {
-          const fqBloq = p.fs && Math.abs(p.fs - x.w) <= 1, ehFS = p.fs === x.w, ehFQ = p.fq === x.w;
+          const fqBloq = p.fs === x.w, ehFS = p.fs === x.w, ehFQ = p.fq === x.w;
           const rFS = !ehFS && folgaQuebra(p, "fs", x.w), rFQ = !ehFQ && !fqBloq && !semFQ(p) && folgaQuebra(p, "fq", x.w);
           const AV = `<small class="ruim">passa de 5 dias seguidos</small>`;
           return `<div class="ff-fixar"><p style="margin:0 0 6px"><b>Repetir no mês todo</b></p>
           <div class="ff-fixar-bts"><button type="button" class="ff-bt${ehFS ? " sel" : ""}" id="fixFS" ${ehFS ? "disabled" : ""}><span class="ff-sigla">FS</span><span><b>${ehFS ? "Já é a folga semanal" : "Folga semanal"}</b><small>toda ${NOME_UTIL[x.w]} do mês</small>${rFS ? AV : ""}</span></button>
-          ${semFQ(p) ? "" : `<button type="button" class="ff-bt${ehFQ ? " sel" : ""}" id="fixFQ" ${ehFQ || fqBloq ? "disabled" : ""}><span class="ff-sigla q">FQ</span><span><b>${ehFQ ? "Já é a folga quinzenal" : "Folga quinzenal"}</b><small>${fqBloq && !ehFS ? "não pode ficar colada na FS" : ehFS ? "este dia já é a FS" : `${NOME_UTIL[x.w]}, na semana em que trabalha domingo`}</small>${rFQ ? AV : ""}</span></button>`}</div></div>`;
+          ${semFQ(p) ? "" : `<button type="button" class="ff-bt${ehFQ ? " sel" : ""}" id="fixFQ" ${ehFQ || fqBloq ? "disabled" : ""}><span class="ff-sigla q">FQ</span><span><b>${ehFQ ? "Já é a folga quinzenal" : "Folga quinzenal"}</b><small>${ehFS ? "este dia já é a FS" : `${NOME_UTIL[x.w]}, na semana em que trabalha domingo`}</small>${rFQ ? AV : ""}</span></button>`}</div></div>`;
         })() : ""}
         <p style="margin-bottom:4px"><b>Trocar esta folga de dia</b></p><p class="dica">Toque no dia da semana em que a pessoa vai folgar no lugar deste. Ela passa a trabalhar hoje.</p>
         <div class="semana-mini">${sem.dias.map((j) => { const y = E.dias[j], cj = p.dias[j]; return `<button data-j="${j}" class="${cj.t === "T" ? "" : cj.t === "D" ? "d" : "f"} ${j === i ? "atual" : ""}" ${j === i || cj.t !== "T" || y.fechado ? "disabled" : ""}>${DIAS_CURTO[y.w]}<br><b>${String(y.d).padStart(2, "0")}</b><br>${cj.t === "T" ? hm(cj.ini) : cj.t === "D" ? "DOM" : siglaFolga(p, y)}</button>`; }).join("")}</div>` : ""}
@@ -1347,6 +1368,7 @@ function abrirPessoa(pid) {
     </div>` : ""}
     <div class="horarios">
       <label class="campo"><span>Setor</span><select id="pSetor" ${travar ? "disabled" : ""}>${setores.map((s) => `<option ${s === p.setor ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
+      <label class="campo"><span>Subgrupo no setor</span><select id="pGrupo" ${travar ? "disabled" : ""}><option value="">Automático (${NOME_SUBGRUPO[subgrupoAuto(p)]})</option>${SUBGRUPOS.map(([g, nm]) => `<option value="${g}" ${p.grupo === g ? "selected" : ""}>${nm}</option>`).join("")}</select></label>
       ${p.diarista ? "" : `<label class="campo"><span>Horas por semana</span><select id="pHoras" ${travar ? "disabled" : ""}>${[42, 40, 36, 30, 24, 20].map((h) => `<option value="${h}" ${h === p.horas ? "selected" : ""}>${h}h</option>`).join("")}</select></label>`}
     </div>
     ${p.setor !== "Gerência" ? `<label class="marcar"><input type="checkbox" id="pSub" ${p.subGerente ? "checked" : ""} ${travar ? "disabled" : ""}><span><b>Substitui o gerente</b>: pode abrir e fechar a loja quando não tiver gerente (conta para a regra de 1 gerente na abertura e 1 no fechamento).</span></label>` : ""}
@@ -1371,6 +1393,7 @@ function abrirPessoa(pid) {
   $("#fechar", pn).onclick = fecharPainel;
   if (travar) return;
   $("#pSetor", pn).onchange = (e) => { alterar(() => { p.setor = e.target.value; }, "Setor mudado."); abrirPessoa(pid); };
+  $("#pGrupo", pn).onchange = (e) => { const g = e.target.value; alterar(() => { if (g) p.grupo = g; else delete p.grupo; }, g ? `${p.nome} agora fica em ${NOME_SUBGRUPO[g]}.` : `${p.nome}: subgrupo pelo horário (${NOME_SUBGRUPO[subgrupoAuto(p)]}).`); abrirPessoa(pid); };
   const nv = $("#pNomeVaga", pn); if (nv) nv.onchange = () => { const v = nv.value.trim(); if (v.length < 3) { nv.value = p.nome; return; } alterar(() => { p.nome = v; p.nomeCompleto = v; }, p.diarista ? "Nome mudado." : "Nome da vaga mudado."); abrirPessoa(pid); };
   const pi = $("#pInicio", pn); if (pi) pi.onchange = () => { alterar(() => aplicarInicio(p, pi.value), pi.value > E.dias[0].iso ? `A vaga começa em ${isoBr(pi.value)}. Confira as folgas da primeira semana.` : "A vaga vale o mês todo."); abrirPessoa(pid); };
   const sub = $("#pSub", pn); if (sub) sub.onchange = (e) => { alterar(() => { p.subGerente = e.target.checked; }, e.target.checked ? `${p.nome} agora pode abrir e fechar no lugar do gerente.` : `${p.nome} não substitui mais o gerente.`); abrirPessoa(pid); };
@@ -1898,17 +1921,17 @@ function imprimir() {
   const setores = setoresDe(E);
   const cab = `<tr><th>Nome</th>${E.dias.map((x) => `<th>${LETRA[x.w]}<br>${x.d}</th>`).join("")}</tr>`;
   $("#impressao").innerHTML = `<h1>${esc(ESC.loja_nome)} · escala de ${esc(mesTxt(ESC.mes))}${ESC.status === "lancada" ? ` · lançada em ${esc(quando(ESC.lancada_em))}` : " · NÃO LANÇADA (rascunho)"}</h1>
-    <table>${cab}${setores.map((s) => `<tr><td colspan="${E.dias.length + 1}" class="n"><b>${esc(s)}</b></td></tr>` + E.pessoas.filter((p) => !p.fora && p.setor === s).map((p) => `<tr><td class="n">${esc(nomeExp(p))}${p.horas !== 42 ? ` (${p.horas}h)` : ""}</td>${E.dias.map((x, i) => { const c = p.dias[i]; return `<td class="${c.t === "T" ? "" : c.t === "D" ? "d" : "f"}">${c.t === "T" ? `${hm(c.ini)}<br>${hm(c.fim)}` : c.t === "X" ? "FER" : c.t === "A" ? "AFAST" : c.t === "V" ? "FÉRIAS" : c.t === "N" ? "-" : x.fechado ? "" : c.t === "D" ? "DOM" : siglaFolga(p, x)}</td>`; }).join("")}</tr>`).join("")).join("")}</table>
+    <table>${cab}${setores.map((s) => `<tr><td colspan="${E.dias.length + 1}" class="n"><b>${esc(s)}</b></td></tr>` + porSubgrupo(E.pessoas.filter((p) => !p.fora && p.setor === s)).map((p, k, ar) => (k === 0 || subgrupoDe(ar[k - 1]) !== subgrupoDe(p) ? `<tr><td colspan="${E.dias.length + 1}" class="n"><i>${NOME_SUBGRUPO[subgrupoDe(p)]}</i></td></tr>` : "") + `<tr><td class="n">${esc(nomeExp(p))}${p.horas !== 42 ? ` (${p.horas}h)` : ""}</td>${E.dias.map((x, i) => { const c = p.dias[i]; return `<td class="${c.t === "T" ? "" : c.t === "D" ? "d" : "f"}">${c.t === "T" ? `${hm(c.ini)}<br>${hm(c.fim)}` : c.t === "X" ? "FER" : c.t === "A" ? "AFAST" : c.t === "V" ? "FÉRIAS" : c.t === "N" ? "-" : x.fechado ? "" : c.t === "D" ? "DOM" : siglaFolga(p, x)}</td>`; }).join("")}</tr>`).join("")).join("")}</table>
     <p style="margin-top:4px">Em cada dia: entrada em cima, saída embaixo. F = folga. DOM = folga no domingo. Impresso em ${new Date().toLocaleString("pt-BR")}.</p>`;
   window.print();
 }
 function baixarExcel() {
   if (!window.XLSX) { toast("O Excel ainda está carregando. Tente de novo em alguns segundos."); return; }
-  const linhas = [[`${ESC.loja_nome} · escala de ${mesTxt(ESC.mes)}${ESC.status === "lancada" ? " · lançada" : " · rascunho"}`], [], ["Setor", "Nome", "Horas/semana", ...E.dias.map((x) => `${DIAS_CURTO[x.w]} ${dataTxt(x)}`)]];
-  setoresDe(E).forEach((s) => E.pessoas.filter((p) => !p.fora && p.setor === s).forEach((p) => linhas.push([s, nomeExp(p), p.horas, ...E.dias.map((x, i) => celTxt(x, p.dias[i]))])));
+  const linhas = [[`${ESC.loja_nome} · escala de ${mesTxt(ESC.mes)}${ESC.status === "lancada" ? " · lançada" : " · rascunho"}`], [], ["Setor", "Subgrupo", "Nome", "Horas/semana", ...E.dias.map((x) => `${DIAS_CURTO[x.w]} ${dataTxt(x)}`)]];
+  setoresDe(E).forEach((s) => porSubgrupo(E.pessoas.filter((p) => !p.fora && p.setor === s)).forEach((p) => linhas.push([s, NOME_SUBGRUPO[subgrupoDe(p)], nomeExp(p), p.horas, ...E.dias.map((x, i) => celTxt(x, p.dias[i]))])));
   const ws = XLSX.utils.aoa_to_sheet(linhas);
-  ws["!cols"] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, ...E.dias.map(() => ({ wch: 12 }))];
-  ws["!freeze"] = { xSplit: 3, ySplit: 3 };
+  ws["!cols"] = [{ wch: 12 }, { wch: 13 }, { wch: 28 }, { wch: 8 }, ...E.dias.map(() => ({ wch: 12 }))];
+  ws["!freeze"] = { xSplit: 4, ySplit: 3 };
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Escala");
   const det = [["Nome", "Data", "Dia", "Situação", "Entrada", "Intervalo", "Volta", "Saída", "Horas"]];
   E.pessoas.filter((p) => !p.fora).forEach((p) => E.dias.forEach((x, i) => { const c = p.dias[i]; det.push([nomeExp(p), dataTxt(x), DIAS_CURTO[x.w], c.t === "T" ? "trabalha" : c.t === "X" ? "feriado" : c.t === "N" ? "ainda não entrou" : c.t === "L" ? "diarista não vem" : c.t === "A" ? "afastado" : c.t === "V" ? "férias" : "folga", c.t === "T" ? hm(c.ini) : "", c.alm ? hm(c.alm[0]) : "", c.alm ? hm(c.alm[1]) : "", c.t === "T" ? hm(c.fim) : "", c.t === "T" ? horasTxt(trabDe(c)) : ""]); }));

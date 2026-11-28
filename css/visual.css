@@ -112,7 +112,13 @@ details.abre > summary::before { transition: transform .22s var(--mola); }
 .cel.mudou::after { width: 7px; height: 7px; box-shadow: 0 0 0 1.5px var(--sup); }
 .travada .cel:hover { transform: none; box-shadow: none; }
 .grade-escala tr.setor td { background: linear-gradient(90deg, color-mix(in srgb, var(--acento) 9%, var(--sup2)), var(--sup2) 280px); box-shadow: inset 3px 0 0 var(--acento); font-family: var(--titulo); font-size: 13px; letter-spacing: -.01em; }
-.grade-escala tbody tr:not(.setor):hover td.nome { background: var(--sup2); }
+.grade-escala tbody tr:not(.setor):not(.subgrupo):hover td.nome { background: var(--sup2); }
+/* subgrupo dentro do setor: abertura / intermediário / fechamento */
+.grade-escala tr.subgrupo td { padding: 7px 10px 3px; background: var(--sup); border-bottom: 0; }
+.grade-escala tr.subgrupo td span { position: sticky; left: 10px; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--texto2); }
+.grade-escala tr.subgrupo td span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--manha-txt); opacity: .55; }
+.grade-escala tr.sg-I td span::before { background: linear-gradient(90deg, var(--manha-txt) 50%, var(--tarde-txt) 50%); }
+.grade-escala tr.sg-F td span::before { background: var(--tarde-txt); }
 
 /* ---------- painel lateral e janelas ---------- */
 .fundo-painel, .modal-fundo { backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); animation: escurece .2s ease both; }

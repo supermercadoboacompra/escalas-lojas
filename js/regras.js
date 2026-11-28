@@ -83,12 +83,7 @@ function validarPessoa(E, p, o) {
   });
   if (!dia5x2) return out;
   const minDom = R.domingosFolgaMin || 2, domingos = E.dias.filter((x) => x.w === 0).length;
-  // FQ (folga quinzenal) não pode ficar colada na FS (folga semanal) — regra do usuário, 27/11/2026
-  if (p.fs && p.fq && Math.abs(p.fs - p.fq) <= 1) add("erro", null, "FQ colada na FS", "Regra da empresa: a folga quinzenal não pode ficar no dia antes nem no dia depois da folga semanal.");
-  else if (p.fs) E.dias.forEach((x, i) => {
-    if (x.w !== p.fs || p.dias[i].t !== "F") return;
-    [i - 1, i + 1].forEach((k) => { const y = E.dias[k]; if (y && y.w >= 1 && y.w <= 5 && !y.fechado && p.dias[k].t === "F") add("erro", k, "Folga colada na FS", `Regra da empresa: a outra folga da semana não pode ficar colada na folga semanal (${DIAS_SEM[p.fs]}).`); });
-  });
+  // FQ colada na FS é permitida (usuário tirou a trava em 28/11/2026)
   if (domFolga < Math.min(minDom, domingos)) add("erro", null, `Só ${domFolga} domingo(s) de folga no mês`, `Regra da empresa: pelo menos ${minDom} domingos de folga no mês.`);
   (E.semanas || []).forEach((S) => {
     if (!S.cheia) return;
